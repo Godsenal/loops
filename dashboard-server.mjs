@@ -45,16 +45,18 @@ function refreshPRs() {
   const urls = new Set();
   for (const lid of listLoopIds()) { const snap = readJSON(`${LOOPS}/${lid}/state/snapshot.json`); (snap?.issues || []).forEach(i => { if (i.pr) urls.add(i.pr); }); }
   for (const url of urls) {
-    execFile(GH, ['pr', 'view', url, '--json', 'state,mergedAt,reviewDecision,statusCheckRollup'], { timeout: 9000 }, (e, so) => {
+    execFile(GH, ['pr', 'view', url, '--json', 'state,mergedAt,reviewDecision,statusCheckRollup,reviews,comments'], { timeout: 9000 }, (e, so) => {
       if (e) return; try {
         const j = JSON.parse(so); const ch = j.statusCheckRollup || [];
-        let cs = 'pass';
-        if (ch.some(c => ['FAILURE', 'ERROR', 'TIMED_OUT', 'CANCELLED', 'STARTUP_FAILURE'].includes(c.conclusion))) cs = 'fail';
-        else if (ch.some(c => c.status && c.status !== 'COMPLETED')) cs = 'pending';
+        const ciFail = ch.filter(c => ['FAILURE', 'ERROR', 'TIMED_OUT', 'CANCELLED', 'STARTUP_FAILURE'].includes(c.conclusion)).length;
+        const ciPend = ch.filter(c => c.status && c.status !== 'COMPLETED').length;
+        const ciPass = ch.filter(c => c.conclusion === 'SUCCESS').length;
+        const cs = ciFail ? 'fail' : (ciPend ? 'pending' : 'pass');
+        const reviewCount = (j.reviews || []).length, commentCount = (j.comments || []).length;
         let att = null;
         if (j.state === 'OPEN') { if (cs === 'fail') att = 'ci-failed'; else if (j.reviewDecision === 'APPROVED') att = 'merge-ready'; else if (j.reviewDecision === 'CHANGES_REQUESTED') att = 'changes'; }
         else if (j.state === 'CLOSED' && !j.mergedAt) att = 'pr-closed';
-        prCache[url] = { merged: !!j.mergedAt, state: j.state, review: j.reviewDecision, checks: cs, attention: att };
+        prCache[url] = { merged: !!j.mergedAt, state: j.state, review: j.reviewDecision, checks: cs, ci: { pass: ciPass, fail: ciFail, pending: ciPend }, reviewCount, commentCount, attention: att };
       } catch {}
     });
   }
@@ -68,7 +70,7 @@ function loopStatus(lid, allTabs) {
   const order = { 'In Progress': 0, 'In Review': 1, 'Backlog': 2, 'Done': 3 };
   const tabByIssue = {};
   for (const t of allTabs) { const m = (t.title || '').match(new RegExp('🛠\\s*' + lid + '\\s+(\\S+)')); if (m) tabByIssue[m[1].toUpperCase()] = t.ref; }
-  const issues = (snap?.issues || []).map(i => { const gateResolved = i.flag === 'human-gate' && existsSync(`${st}/decisions/${i.id}.md`); return ({ ...i, workspace: tabByIssue[i.id] || null, alive: !!tabByIssue[i.id], hasWorktree: existsSync(`${cfg.worktreePrefix || ''}-${slugOf(i.id)}`), merged: i.pr && prCache[i.pr] ? prCache[i.pr].merged : undefined, prState: i.pr && prCache[i.pr] ? prCache[i.pr].state : undefined, checks: i.pr && prCache[i.pr] ? prCache[i.pr].checks : undefined, gateResolved, attention: (i.pr && prCache[i.pr] ? prCache[i.pr].attention : null) || (i.flag === 'human-gate' && !gateResolved ? 'human-gate' : null) }); })
+  const issues = (snap?.issues || []).map(i => { const gateResolved = i.flag === 'human-gate' && existsSync(`${st}/decisions/${i.id}.md`); return ({ ...i, workspace: tabByIssue[i.id] || null, alive: !!tabByIssue[i.id], hasWorktree: existsSync(`${cfg.worktreePrefix || ''}-${slugOf(i.id)}`), merged: i.pr && prCache[i.pr] ? prCache[i.pr].merged : undefined, prState: i.pr && prCache[i.pr] ? prCache[i.pr].state : undefined, checks: i.pr && prCache[i.pr] ? prCache[i.pr].checks : undefined, ci: i.pr && prCache[i.pr] ? prCache[i.pr].ci : undefined, review: i.pr && prCache[i.pr] ? prCache[i.pr].review : undefined, reviewCount: i.pr && prCache[i.pr] ? prCache[i.pr].reviewCount : undefined, commentCount: i.pr && prCache[i.pr] ? prCache[i.pr].commentCount : undefined, gateResolved, attention: (i.pr && prCache[i.pr] ? prCache[i.pr].attention : null) || (i.flag === 'human-gate' && !gateResolved ? 'human-gate' : null) }); })
     .sort((a, b) => (order[a.state] ?? 9) - (order[b.state] ?? 9));
   const nextFile = readText(`${st}/next_fire`).trim();
   const gd = globalDispatcher();
@@ -107,8 +109,8 @@ async function control(a, p) {
     case 'stop': { const pid = globalDispatcher().pid; if (pid) { try { process.kill(pid, 'SIGTERM'); } catch {} setTimeout(() => { try { if (pidAlive(pid)) process.kill(pid, 'SIGKILL'); } catch {} }, 1500); } execFile('/usr/bin/pkill', ['-f', `${ROOT}/bin/dispatch.sh`], () => {}); return { ok: true, out: 'stopped' }; }
     case 'pause': return sh('/usr/bin/touch', [GPAUSED]);
     case 'resume': return sh('/bin/rm', ['-f', GPAUSED]);
-    case 'run-now': { if (!lid) return { ok: false, out: 'no loop' }; spawn(`${ROOT}/bin/spawn-orchestrator.sh`, [lid], { stdio: 'ignore' }); return { ok: true, out: lid + ' 사이클 발사' }; }
-    case 'reconcile': { if (!lid) return { ok: false, out: 'no loop' }; spawn(`${ROOT}/bin/spawn-orchestrator.sh`, [lid, 'reconcile'], { stdio: 'ignore' }); return { ok: true, out: lid + ' 머지정리 중… (Linear In Review→Done, ~1분)' }; }
+    case 'run-now': { if (!lid) return { ok: false, out: 'no loop' }; if (existsSync(`/tmp/loop-${lid}.lockdir`)) return { ok: false, out: '⏳ 이미 orchestrator 실행 중입니다 — 끝난 뒤 다시 누르세요 (버튼이 "실행 중·로그"로 바뀌면 끝난 겁니다).' }; spawn(`${ROOT}/bin/spawn-orchestrator.sh`, [lid], { stdio: 'ignore' }); return { ok: true, out: lid + ' 사이클 발사' }; }
+    case 'reconcile': { if (!lid) return { ok: false, out: 'no loop' }; if (existsSync(`/tmp/loop-${lid}.lockdir`)) return { ok: false, out: '⏳ orchestrator 실행 중이라 지금은 못 합니다. 현재 run이 끝나면 다음 run이 머지/닫힘 PR을 자동 정리합니다 (급하면 끝난 뒤 다시 누르세요).' }; spawn(`${ROOT}/bin/spawn-orchestrator.sh`, [lid, 'reconcile'], { stdio: 'ignore' }); return { ok: true, out: lid + ' PR 정리 중… (머지→Done, 닫힘→Canceled, ~1분)' }; }
     case 'resolve-gate': {
       if (!lid || !p.issue) return { ok: false, out: 'no loop/issue' };
       const decision = (p.decision || '').trim();
