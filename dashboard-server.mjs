@@ -53,6 +53,7 @@ function refreshPRs() {
         else if (ch.some(c => c.status && c.status !== 'COMPLETED')) cs = 'pending';
         let att = null;
         if (j.state === 'OPEN') { if (cs === 'fail') att = 'ci-failed'; else if (j.reviewDecision === 'APPROVED') att = 'merge-ready'; else if (j.reviewDecision === 'CHANGES_REQUESTED') att = 'changes'; }
+        else if (j.state === 'CLOSED' && !j.mergedAt) att = 'pr-closed';
         prCache[url] = { merged: !!j.mergedAt, state: j.state, review: j.reviewDecision, checks: cs, attention: att };
       } catch {}
     });
@@ -79,6 +80,7 @@ function loopStatus(lid, allTabs) {
     nextTs, counts: snap?.counts || null, issues, feed: f.slice(-40).reverse(),
     attentionCount: issues.filter(i => i.attention).length,
     mergedInReview: issues.filter(i => i.state === 'In Review' && i.merged).length,
+    closedInReview: issues.filter(i => i.state === 'In Review' && i.prState === 'CLOSED' && !i.merged).length,
     orchRunning: existsSync(`/tmp/loop-${lid}.lockdir`),
   };
 }
