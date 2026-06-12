@@ -108,6 +108,16 @@ function renderBody(d,L){
   +(L.linearProjectUrl?'<a href="'+esc(L.linearProjectUrl)+'" target=_blank><button>Linear↗</button></a>':'')
   +'<button onclick="viewLog(\''+L.id+'\')">orch 로그</button></div></div>';
  h+='<div class="counts" style="margin-top:8px">'+['Backlog','In Progress','In Review','Done'].map(function(k){return '<span><b>'+(c[k]||0)+'</b> <span class="chip '+scc(k)+'">'+k+'</span></span>';}).join('')+'</div>';
+ var cap=L.maxWorkers||2,inflight=(c['In Progress']||0)+(c['In Review']||0),capacity=cap-inflight;
+ var _bl=(L.issues||[]);
+ var actionable=_bl.filter(function(w){return w.state==='Backlog'&&w.flag!=='human-gate'&&w.attention!=='human-gate'&&!/run log/i.test(w.title||'');}).length;
+ var gated=_bl.filter(function(w){return w.state==='Backlog'&&(w.flag==='human-gate'||w.attention==='human-gate');}).length;
+ var bmsg,bcol;
+ if(capacity<=0){bmsg='⛔ 실행 막힘 — 워커 슬롯 '+inflight+'/'+cap+' 꽉 참 (In Review PR 머지 대기). PR을 머지하면 다음 run이 backlog를 실행합니다.';bcol='#d29922';}
+ else if(actionable>0){bmsg='▶ 다음 run에 최대 '+Math.min(capacity,actionable)+'건 실행 (여유 슬롯 '+capacity+'/'+cap+', 실행대기 backlog '+actionable+')';bcol='#3fb950';}
+ else if(gated>0){bmsg='⚖️ 실행할 backlog 없음 — '+gated+'건이 human-gate (⚖️ 판단으로 풀어야 실행 후보가 됩니다)';bcol='#d29922';}
+ else{bmsg='유휴 — 실행할 backlog 없음. 다음 audit이 새 작업을 발굴합니다.';bcol='#8b949e';}
+ h+='<div style="margin-top:6px;font-size:12.5px;color:'+bcol+'">'+bmsg+'</div>';
  var hideDone=localStorage.getItem('hideDone')!=='0';
  var allIts=L.issues||[]; var its=hideDone?allIts.filter(function(w){return w.state!=='Done';}):allIts; var hidden=allIts.length-its.length;
  allIts.forEach(function(w){if(w.flag==='human-gate'||w.attention==='human-gate')gateInfo[w.id]={title:w.title||'',ask:(w.gate&&w.gate.ask)||'',url:w.url||''};});
