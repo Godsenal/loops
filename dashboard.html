@@ -27,6 +27,7 @@ input{width:90px}textarea{width:100%;font:12px/1.5 ui-monospace,Menlo,monospace;
 .modal pre{flex:1;overflow:auto;margin:0;padding:12px;font:12px/1.45 ui-monospace,Menlo,monospace;white-space:pre-wrap;color:#c9d1d9}
 .modal .body{padding:14px;overflow:auto}
 .fld{display:flex;gap:8px;align-items:center;margin-bottom:8px}.fld label{width:120px;color:#8b949e;font-size:13px}.fld input{width:auto;flex:1}
+.spin{display:inline-block;animation:spin 1.4s linear infinite}@keyframes spin{to{transform:rotate(360deg)}}
 </style></head><body>
 <div id="side"><div class="row" style="justify-content:space-between"><h2>Loops</h2><button onclick="openCreate()">+ 새 loop</button></div><div id="looplist"></div>
 <div class="sec">디스패처(전역)</div><div id="gctl" class="row"></div></div>
@@ -72,6 +73,7 @@ function createLoop(){var b={id:c_id.value,name:c_name.value,emoji:c_emoji.value
 function startIssue(id){if(!confirm(id+' 지금 작업 시작? (worker 탭 생성→구현→PR)'))return;ctl('start-issue',{issue:id});}
 function closeTab(ws){if(!confirm('이 worker 탭(cmux 패널/세션)을 닫을까요?'))return;ctl('close-tab',{workspace:ws});}
 function reconcile(loop,n){if(!confirm('머지된 '+n+'건을 Linear In Review→Done 으로 정리할까요?\n(orchestrator가 머지정리만 빠르게 1회 실행 — ~1분 후 보드 갱신)'))return;ctl('reconcile',{loop:loop});}
+function runNow(){ctl('run-now').then(function(j){if(j&&j.ok){viewLog(sel);}});}
 function toggleHideDone(){localStorage.setItem('hideDone',localStorage.getItem('hideDone')==='0'?'1':'0');load();}
 var gateId=null;
 function openGate(id){gateId=id;document.getElementById('gtitle').textContent='⚖️ '+id+' — 판단 내리기';document.getElementById('g_decision').value='';document.getElementById('gmodal').style.display='block';setTimeout(function(){document.getElementById('g_decision').focus();},50);}
@@ -84,7 +86,7 @@ function delLoop(){if(!confirm(sel+' loop 삭제? config/mission/state 제거 (w
 
 function render(d){
  if(!sel&&d.loops[0])sel=d.loops[0].id;
- document.getElementById('looplist').innerHTML=d.loops.map(function(L){var c=L.counts||{};var tot=(c.Backlog||0)+(c['In Progress']||0)+(c['In Review']||0);return '<div class="loopitem'+(L.id===sel?' sel':'')+'" onclick="selectLoop(\''+L.id+'\')"><div class="n">'+L.emoji+' '+esc(L.name)+'</div><div class="m"><span class="dot '+(L.enabled?(L.paused?'pause':'on'):'off')+'"></span>'+(L.enabled?(L.paused?'paused':'on'):'off')+' · '+tot+' 작업'+(L.attentionCount>0?' <span style="color:#f85149">🔴'+L.attentionCount+'</span>':'')+(L.nextTs?' · 다음 '+rel(L.nextTs):'')+'</div></div>';}).join('')||'<div class=muted style="padding:8px">loop 없음</div>';
+ document.getElementById('looplist').innerHTML=d.loops.map(function(L){var c=L.counts||{};var tot=(c.Backlog||0)+(c['In Progress']||0)+(c['In Review']||0);return '<div class="loopitem'+(L.id===sel?' sel':'')+'" onclick="selectLoop(\''+L.id+'\')"><div class="n">'+L.emoji+' '+esc(L.name)+'</div><div class="m"><span class="dot '+(L.enabled?(L.paused?'pause':'on'):'off')+'"></span>'+(L.enabled?(L.paused?'paused':'on'):'off')+' · '+tot+' 작업'+(L.orchRunning?' <span class="spin">⏳</span>실행중':'')+(L.attentionCount>0?' <span style="color:#f85149">🔴'+L.attentionCount+'</span>':'')+(L.nextTs?' · 다음 '+rel(L.nextTs):'')+'</div></div>';}).join('')||'<div class=muted style="padding:8px">loop 없음</div>';
  var gd=d.dispatcher;
  document.getElementById('gctl').innerHTML='<span class="dot '+(gd.running?(gd.paused?'pause':'on'):'off')+'"></span>'+(gd.running?(gd.paused?'paused':'running'):'stopped')+' <button class="p" onclick="ctl(\'start\')">▶</button><button onclick="ctl(\'pause\')">⏸</button><button onclick="ctl(\'resume\')">▶▶</button><button class="d" onclick="ctl(\'stop\')">⏹</button>';
  var L=d.loops.find(function(x){return x.id===sel;});
@@ -95,7 +97,7 @@ function render(d){
 function renderBody(d,L){
  var c=L.counts||{};
  var h='<div class="row" style="justify-content:space-between"><h1 style="margin:0;font-size:18px">'+L.emoji+' '+esc(L.name)+'</h1><div class="row">'
-  +'<button onclick="ctl(\'run-now\')">⚡ run now</button>'
+  +(L.orchRunning?'<button onclick="viewLog(\''+L.id+'\')" title="orchestrator 실행 중 — 클릭하면 라이브 로그"><span class="spin">⏳</span> 실행 중 · 로그</button>':'<button onclick="runNow()">⚡ run now</button>')
   +(L.mergedInReview>0?'<button class="p" onclick="reconcile(\''+L.id+'\','+L.mergedInReview+')">🧹 머지된 '+L.mergedInReview+'건 정리</button>':'')
   +'<button onclick="ctl(\''+(L.paused?'loop-resume':'loop-pause')+'\')">'+(L.paused?'▶ 재개':'⏸ 일시정지')+'</button>'
   +'<button onclick="ctl(\'toggle-enabled\')">'+(L.enabled?'끄기':'켜기')+'</button>'
