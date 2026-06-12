@@ -67,7 +67,7 @@ function loopStatus(lid, allTabs) {
   const order = { 'In Progress': 0, 'In Review': 1, 'Backlog': 2, 'Done': 3 };
   const tabByIssue = {};
   for (const t of allTabs) { const m = (t.title || '').match(new RegExp('🛠\\s*' + lid + '\\s+(\\S+)')); if (m) tabByIssue[m[1].toUpperCase()] = t.ref; }
-  const issues = (snap?.issues || []).map(i => ({ ...i, workspace: tabByIssue[i.id] || null, alive: !!tabByIssue[i.id], hasWorktree: existsSync(`${cfg.worktreePrefix || ''}-${slugOf(i.id)}`), merged: i.pr && prCache[i.pr] ? prCache[i.pr].merged : undefined, prState: i.pr && prCache[i.pr] ? prCache[i.pr].state : undefined, checks: i.pr && prCache[i.pr] ? prCache[i.pr].checks : undefined, attention: (i.pr && prCache[i.pr] ? prCache[i.pr].attention : null) || (i.flag === 'human-gate' ? 'human-gate' : null) }))
+  const issues = (snap?.issues || []).map(i => { const gateResolved = i.flag === 'human-gate' && existsSync(`${st}/decisions/${i.id}.md`); return ({ ...i, workspace: tabByIssue[i.id] || null, alive: !!tabByIssue[i.id], hasWorktree: existsSync(`${cfg.worktreePrefix || ''}-${slugOf(i.id)}`), merged: i.pr && prCache[i.pr] ? prCache[i.pr].merged : undefined, prState: i.pr && prCache[i.pr] ? prCache[i.pr].state : undefined, checks: i.pr && prCache[i.pr] ? prCache[i.pr].checks : undefined, gateResolved, attention: (i.pr && prCache[i.pr] ? prCache[i.pr].attention : null) || (i.flag === 'human-gate' && !gateResolved ? 'human-gate' : null) }); })
     .sort((a, b) => (order[a.state] ?? 9) - (order[b.state] ?? 9));
   const nextFile = readText(`${st}/next_fire`).trim();
   const gd = globalDispatcher();
