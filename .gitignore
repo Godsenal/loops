@@ -1,0 +1,6 @@
+# 유저 데이터 / 런타임 / 머신별 설정 — 추적 안 함
+/loops/
+/state/
+/loops.env
+*.log
+.DS_Store
