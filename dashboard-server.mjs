@@ -79,6 +79,7 @@ function loopStatus(lid, allTabs) {
     nextTs, counts: snap?.counts || null, issues, feed: f.slice(-40).reverse(),
     attentionCount: issues.filter(i => i.attention).length,
     mergedInReview: issues.filter(i => i.state === 'In Review' && i.merged).length,
+    orchRunning: existsSync(`/tmp/loop-${lid}.lockdir`),
   };
 }
 function status() {
