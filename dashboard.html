@@ -66,6 +66,7 @@ function closeC(){document.getElementById('cmodal').style.display='none';}
 function createLoop(){var b={id:c_id.value,name:c_name.value,emoji:c_emoji.value,repo:c_repo.value,linearProjectId:c_pid.value,intervalMin:c_iv.value,mission:c_mission.value};fetch('/api/control',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify(Object.assign({action:'create-loop'},b))}).then(function(r){return r.json();}).then(function(j){alert(j.out||'');if(j.ok){closeC();var m=/loop 생성: (\S+)/.exec(j.out);selectLoop(m?m[1]:c_id.value);}});}
 function startIssue(id){if(!confirm(id+' 지금 작업 시작? (worker 탭 생성→구현→PR)'))return;ctl('start-issue',{issue:id});}
 function closeTab(ws){if(!confirm('이 worker 탭(cmux 패널/세션)을 닫을까요?'))return;ctl('close-tab',{workspace:ws});}
+function reconcile(loop,n){if(!confirm('머지된 '+n+'건을 Linear In Review→Done 으로 정리할까요?\n(orchestrator가 머지정리만 빠르게 1회 실행 — ~1분 후 보드 갱신)'))return;ctl('reconcile',{loop:loop});}
 function setSched(){ctl('set-schedule',{startAt:document.getElementById('startAt').value,intervalMin:document.getElementById('ivMin').value});}
 function saveMission(){ctl('save-mission',{content:document.getElementById('missionbox').value}).then(function(){editMission=false;});}
 function saveConfig(){var t=document.getElementById('cfgbox').value,o;try{o=JSON.parse(t);}catch(e){alert('JSON 오류: '+e.message);return;}ctl('save-config-raw',{config:o}).then(function(j){if(j.ok)editCfg=false;});}
@@ -85,6 +86,7 @@ function renderBody(d,L){
  var c=L.counts||{};
  var h='<div class="row" style="justify-content:space-between"><h1 style="margin:0;font-size:18px">'+L.emoji+' '+esc(L.name)+'</h1><div class="row">'
   +'<button onclick="ctl(\'run-now\')">⚡ run now</button>'
+  +(L.mergedInReview>0?'<button class="p" onclick="reconcile(\''+L.id+'\','+L.mergedInReview+')">🧹 머지된 '+L.mergedInReview+'건 정리</button>':'')
   +'<button onclick="ctl(\''+(L.paused?'loop-resume':'loop-pause')+'\')">'+(L.paused?'▶ 재개':'⏸ 일시정지')+'</button>'
   +'<button onclick="ctl(\'toggle-enabled\')">'+(L.enabled?'끄기':'켜기')+'</button>'
   +(L.linearProjectUrl?'<a href="'+esc(L.linearProjectUrl)+'" target=_blank><button>Linear↗</button></a>':'')
