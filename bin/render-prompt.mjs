@@ -14,6 +14,7 @@ const vars = {
   REPO: cfg.repo, BASE_REF: cfg.baseRef || 'origin/develop', PR_BASE: cfg.prBase || 'develop',
   LINEAR_PROJECT_ID: cfg.linearProjectId || '', LINEAR_PROJECT_URL: cfg.linearProjectUrl || '',
   MAX_WORKERS: String(cfg.maxWorkers || 2),
+  BACKLOG_TARGET: String(cfg.backlogTarget || 5),
   STATE_DIR: `${ROOT}/loops/${loopId}/state`,
   ORCH_WORKTREE: cfg.orchestratorWorktree || '',
   WORKTREE_PREFIX: cfg.worktreePrefix || '',

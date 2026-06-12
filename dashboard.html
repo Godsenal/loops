@@ -67,7 +67,7 @@ input{width:90px}textarea{width:100%;font:12px/1.5 ui-monospace,Menlo,monospace;
 </div></div></div>
 <script>
 var sel=localStorage.getItem('loop')||null, renderedLoop=null, sRef=null, sLoop=null, sTimer=null, lastData=null;
-var CFG_FIELDS=[{k:'name',label:'이름'},{k:'emoji',label:'emoji'},{k:'maxWorkers',label:'동시 워커 수(cap)',type:'number',hint:'동시에 열리는 PR/워커 최대치'},{k:'repo',label:'repo 경로'},{k:'baseRef',label:'base ref',hint:'근거·구현 기준 (예 origin/develop)'},{k:'prBase',label:'PR base 브랜치'},{k:'branchPrefix',label:'브랜치 prefix'},{k:'orchestratorWorktree',label:'orch worktree'},{k:'worktreePrefix',label:'worker worktree prefix'},{k:'linearProjectId',label:'Linear projectId'},{k:'linearProjectUrl',label:'Linear projectUrl'}];
+var CFG_FIELDS=[{k:'name',label:'이름'},{k:'emoji',label:'emoji'},{k:'maxWorkers',label:'동시 워커 수(cap)',type:'number',def:2,hint:'동시에 열리는 PR/워커 최대치'},{k:'backlogTarget',label:'백로그 목표(개)',type:'number',def:5,hint:'백로그가 이 수보다 적을 때만 새 작업 발굴 (기본 5)'},{k:'repo',label:'repo 경로'},{k:'baseRef',label:'base ref',hint:'근거·구현 기준 (예 origin/develop)'},{k:'prBase',label:'PR base 브랜치'},{k:'branchPrefix',label:'브랜치 prefix'},{k:'orchestratorWorktree',label:'orch worktree'},{k:'worktreePrefix',label:'worker worktree prefix'},{k:'linearProjectId',label:'Linear projectId'},{k:'linearProjectUrl',label:'Linear projectUrl'}];
 function rel(ts){if(!ts)return'';var s=Math.floor(Date.now()/1000)-ts,a=Math.abs(s),x=s<0?' 후':' 전';if(a<60)return a+'s'+x;if(a<3600)return Math.floor(a/60)+'m'+x;if(a<86400)return Math.floor(a/3600)+'h'+x;return Math.floor(a/86400)+'d'+x;}
 function esc(x){return String(x==null?'':x).replace(/[&<>"]/g,function(c){return{'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c];});}
 function scc(s){return 's-'+String(s||'').replace(/\s/g,'');}
@@ -146,7 +146,7 @@ function openSettings(){var L=lastData&&lastData.loops.find(function(x){return x
  document.getElementById('omodal').style.display='block';
  fetch('/api/mission?loop='+sel).then(function(r){return r.text();}).then(function(t){document.getElementById('missionbox').value=t;});
  fetch('/api/config?loop='+sel).then(function(r){return r.text();}).then(function(t){document.getElementById('cfgbox').value=t;var cfg={};try{cfg=JSON.parse(t);}catch(e){}
-  document.getElementById('cfgform').innerHTML=CFG_FIELDS.map(function(f){var v=cfg[f.k]==null?'':cfg[f.k];return '<div class="fld"><label title="'+esc(f.hint||'')+'">'+f.label+'</label><input id="cf_'+f.k+'"'+(f.type==='number'?' type="number" min="1"':'')+' value="'+esc(v)+'">'+(f.hint?' <span class="muted" style="font-size:11px">'+esc(f.hint)+'</span>':'')+'</div>';}).join('');});}
+  document.getElementById('cfgform').innerHTML=CFG_FIELDS.map(function(f){var v=cfg[f.k]==null?(f.def!=null?f.def:''):cfg[f.k];return '<div class="fld"><label title="'+esc(f.hint||'')+'">'+f.label+'</label><input id="cf_'+f.k+'"'+(f.type==='number'?' type="number" min="1"':'')+' value="'+esc(v)+'">'+(f.hint?' <span class="muted" style="font-size:11px">'+esc(f.hint)+'</span>':'')+'</div>';}).join('');});}
 function closeO(){document.getElementById('omodal').style.display='none';}
 function saveConfigRaw(){var t=document.getElementById('cfgbox').value,o;try{o=JSON.parse(t);}catch(e){alert('JSON 오류: '+e.message);return;}ctl('save-config-raw',{config:o}).then(function(j){if(j&&j.ok)flash('raw config 저장됨');});}
 function flash(m){var e=document.getElementById('oflash');if(e){e.textContent=m;setTimeout(function(){if(e.textContent===m)e.textContent='';},2500);}}
