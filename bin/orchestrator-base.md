@@ -29,7 +29,7 @@ STEP 1 — 열린 작업 진행 (중복 방지)
 프로젝트의 "In Review" + "In Progress" 이슈 조회.
 - 각 In Review(연결 PR): `gh pr view <PR> --json url,state,statusCheckRollup,reviewDecision,comments` 로 상태 확인. **PR URL은 반드시 이 `url` 필드 값을 쓴다 (org/repo 를 추측해 직접 만들지 말 것 — origin이 GitHub mirror일 수 있으니 `gh` 가 돌려준 값만 신뢰).**
   - **`state == MERGED` (사람이 머지함) → Linear 이슈를 `Done`으로 이동** + "✅ 머지됨(<url>) → Done" 코멘트. 이러면 in-flight에서 빠져 cap이 풀린다. 살아있는 worker 탭은 사용자가 닫게 둔다(여기서 건드리지 않음).
-  - `state == CLOSED`(머지 없이 닫힘) → 이슈에 "⚠️ PR이 머지 없이 닫힘 — 사람 판단 필요" 코멘트만 남기고 그대로 둔다(추측으로 Cancel/재오픈 하지 말 것).
+  - **`state == CLOSED`(머지 없이 닫힘) → Linear 이슈를 `Canceled`로 이동** + "⚠️ PR #N이 머지 없이 닫힘 → Canceled (재개하려면 이슈를 Backlog로 옮기세요)" 코멘트. 사람이 일부러 닫은 것이므로 자동 재시도(Backlog 복귀·재spawn) 하지 말 것 — Canceled는 in-flight에서 빠져 cap을 푼다. 사용자가 다시 원하면 직접 Backlog로 옮긴다.
   - `state == OPEN`: CI/리뷰 확인 → 이슈에 1줄 코멘트. CI 실패가 명백히 기계적이면 그 브랜치에서 고쳐 push. green+approved면 "✅ 머지 준비됨" 코멘트만. **절대 머지 금지.**
 - 죽은 In Progress(PR도 worker 탭도 없음) → Backlog로 되돌리고 코멘트.
 
