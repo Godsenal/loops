@@ -1,0 +1,117 @@
+<!doctype html><html lang="ko"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Loops</title><style>
+*{box-sizing:border-box}body{margin:0;background:#0d1117;color:#e6edf3;font:14px/1.5 -apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;display:flex;height:100vh;overflow:hidden}
+button{background:#21262d;color:#e6edf3;border:1px solid #30363d;border-radius:6px;padding:5px 10px;cursor:pointer;font:inherit;font-size:13px}
+button:hover{background:#30363d}button.p{background:#238636;border-color:#2ea043}button.p:hover{background:#2ea043}button.d{background:#3d1417;border-color:#6e2528}
+input,textarea{background:#0d1117;color:#e6edf3;border:1px solid #30363d;border-radius:6px;padding:5px 8px;font:inherit}
+input{width:90px}textarea{width:100%;font:12px/1.5 ui-monospace,Menlo,monospace;min-height:160px;resize:vertical}
+.muted{color:#8b949e}.dot{width:8px;height:8px;border-radius:50%;display:inline-block;margin-right:5px}.on{background:#3fb950}.off{background:#6e7681}.pause{background:#d29922}
+.chip{padding:1px 7px;border-radius:10px;font-size:12px;border:1px solid #30363d}
+.s-Backlog{color:#8b949e}.s-InProgress{color:#d29922;border-color:#d29922}.s-InReview{color:#58a6ff;border-color:#58a6ff}.s-Done{color:#3fb950;border-color:#3fb950}
+#side{width:230px;border-right:1px solid #30363d;background:#161b22;overflow-y:auto;flex-shrink:0;padding:10px}
+#side h2{font-size:12px;text-transform:uppercase;color:#8b949e;letter-spacing:.5px;margin:6px 4px}
+.loopitem{padding:8px 10px;border-radius:8px;cursor:pointer;margin-bottom:4px;border:1px solid transparent}
+.loopitem:hover{background:#21262d}.loopitem.sel{background:#21262d;border-color:#30363d}
+.loopitem .n{font-weight:600}.loopitem .m{font-size:11px;color:#8b949e}
+#main{flex:1;overflow-y:auto;padding:16px 20px}
+.row{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+.sec{margin:16px 0 8px;color:#8b949e;font-size:12px;text-transform:uppercase;letter-spacing:.5px}
+.card{background:#161b22;border:1px solid #30363d;border-radius:8px;padding:9px 12px;margin-bottom:7px;display:flex;gap:10px;align-items:center;justify-content:space-between}
+.card .l{display:flex;gap:8px;align-items:center;min-width:0}.card a{color:#58a6ff;text-decoration:none}
+.live{color:#3fb950}.dead{color:#6e7681}.t{color:#6e7681;font-size:12px}
+.feedline{padding:5px 10px;border-left:2px solid #30363d;margin-bottom:3px;font-size:13px}.fe-cycle{border-color:#bb8009}.fe-worker{border-color:#1f6feb}
+.counts{display:flex;gap:14px}.counts b{font-size:17px}
+.modal{display:none;position:fixed;inset:0;background:rgba(0,0,0,.65);z-index:50;padding:28px}
+.modal .box{background:#0d1117;border:1px solid #30363d;border-radius:10px;max-width:980px;margin:0 auto;height:100%;display:flex;flex-direction:column}
+.modal .hd{padding:10px 14px;border-bottom:1px solid #30363d;display:flex;justify-content:space-between;align-items:center}
+.modal pre{flex:1;overflow:auto;margin:0;padding:12px;font:12px/1.45 ui-monospace,Menlo,monospace;white-space:pre-wrap;color:#c9d1d9}
+.modal .body{padding:14px;overflow:auto}
+.fld{display:flex;gap:8px;align-items:center;margin-bottom:8px}.fld label{width:120px;color:#8b949e;font-size:13px}.fld input{width:auto;flex:1}
+</style></head><body>
+<div id="side"><div class="row" style="justify-content:space-between"><h2>Loops</h2><button onclick="openCreate()">+ 새 loop</button></div><div id="looplist"></div>
+<div class="sec">디스패처(전역)</div><div id="gctl" class="row"></div></div>
+<div id="main"></div>
+
+<div class="modal" id="smodal"><div class="box"><div class="hd"><b id="stitle"></b><button onclick="closeS()">✕</button></div><pre id="sbody"></pre></div></div>
+<div class="modal" id="cmodal"><div class="box"><div class="hd"><b>새 loop 만들기</b><button onclick="closeC()">✕</button></div><div class="body">
+ <div class="sec">🤖 AI로 만들기 (추천)</div>
+ <textarea id="c_desc" placeholder="예: 웹뷰 리팩토링 루프 만들어줘 — webview의 거대 컴포넌트 분리하고 중복 로직 정리"></textarea>
+ <div class="row" style="margin:8px 0 16px"><button class="p" onclick="buildLoop()">🤖 Claude로 생성</button> <span class="muted">mission·Linear 프로젝트·설정 자동 구성 (탭에서 진행 보임)</span></div>
+ <div class="sec">또는 직접 입력</div>
+ <div class="fld"><label>id</label><input id="c_id" placeholder="dead-code"></div>
+ <div class="fld"><label>이름</label><input id="c_name" placeholder="Dead Code 정리"></div>
+ <div class="fld"><label>emoji</label><input id="c_emoji" placeholder="🧹"></div>
+ <div class="fld"><label>repo 경로</label><input id="c_repo" placeholder="/abs/path/to/your/repo"></div>
+ <div class="fld"><label>Linear projectId</label><input id="c_pid" placeholder="UUID (Linear 프로젝트)"></div>
+ <div class="fld"><label>인터벌(분)</label><input id="c_iv" value="120"></div>
+ <div class="sec">mission (메인 프롬프트 — 무슨 일을 어떻게 찾는가)</div>
+ <textarea id="c_mission" placeholder="이 루프가 발굴할 작업과 방법을 적으세요."></textarea>
+ <div class="row" style="margin-top:10px"><button class="p" onclick="createLoop()">생성</button> <span class="muted">생성 후 off — 사이드바에서 켜세요.</span></div>
+</div></div></div>
+<script>
+var sel=localStorage.getItem('loop')||null, renderedLoop=null, sRef=null, sLoop=null, sTimer=null, editMission=false, editCfg=false;
+function rel(ts){if(!ts)return'';var s=Math.floor(Date.now()/1000)-ts,a=Math.abs(s),x=s<0?' 후':' 전';if(a<60)return a+'s'+x;if(a<3600)return Math.floor(a/60)+'m'+x;if(a<86400)return Math.floor(a/3600)+'h'+x;return Math.floor(a/86400)+'d'+x;}
+function esc(x){return String(x==null?'':x).replace(/[&<>"]/g,function(c){return{'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c];});}
+function scc(s){return 's-'+String(s||'').replace(/\s/g,'');}
+function ctl(a,ex){return fetch('/api/control',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify(Object.assign({action:a,loop:sel},ex||{}))}).then(function(r){return r.json();}).then(function(j){if(j&&j.ok===false&&j.out)alert(j.out);setTimeout(load,300);return j;});}
+function selectLoop(id){sel=id;localStorage.setItem('loop',id);renderedLoop=null;editMission=false;editCfg=false;load();}
+function viewSession(ref,label){sRef=ref;sLoop=null;document.getElementById('stitle').textContent=label;showS();}
+function viewLog(loop){sRef=null;sLoop=loop;document.getElementById('stitle').textContent=loop+' orchestrator 로그';showS();}
+function showS(){document.getElementById('smodal').style.display='block';refS();if(sTimer)clearInterval(sTimer);sTimer=setInterval(refS,2500);}
+function closeS(){document.getElementById('smodal').style.display='none';if(sTimer)clearInterval(sTimer);}
+function refS(){var q=sRef?('ref='+encodeURIComponent(sRef)):('loop='+encodeURIComponent(sLoop));fetch('/api/session?'+q).then(function(r){return r.text();}).then(function(t){document.getElementById('sbody').textContent=t;});}
+function openCreate(){document.getElementById('cmodal').style.display='block';setTimeout(function(){var e=document.getElementById('c_desc');if(e)e.focus();},50);}
+function buildLoop(){var d=document.getElementById('c_desc').value.trim();if(!d){alert('만들고 싶은 루프를 한 줄로 설명하세요');return;}fetch('/api/control',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({action:'build-loop',description:d})}).then(function(r){return r.json();}).then(function(j){alert(j.out||'');closeC();});}
+function closeC(){document.getElementById('cmodal').style.display='none';}
+function createLoop(){var b={id:c_id.value,name:c_name.value,emoji:c_emoji.value,repo:c_repo.value,linearProjectId:c_pid.value,intervalMin:c_iv.value,mission:c_mission.value};fetch('/api/control',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify(Object.assign({action:'create-loop'},b))}).then(function(r){return r.json();}).then(function(j){alert(j.out||'');if(j.ok){closeC();var m=/loop 생성: (\S+)/.exec(j.out);selectLoop(m?m[1]:c_id.value);}});}
+function startIssue(id){if(!confirm(id+' 지금 작업 시작? (worker 탭 생성→구현→PR)'))return;ctl('start-issue',{issue:id});}
+function closeTab(ws){if(!confirm('이 worker 탭(cmux 패널/세션)을 닫을까요?'))return;ctl('close-tab',{workspace:ws});}
+function setSched(){ctl('set-schedule',{startAt:document.getElementById('startAt').value,intervalMin:document.getElementById('ivMin').value});}
+function saveMission(){ctl('save-mission',{content:document.getElementById('missionbox').value}).then(function(){editMission=false;});}
+function saveConfig(){var t=document.getElementById('cfgbox').value,o;try{o=JSON.parse(t);}catch(e){alert('JSON 오류: '+e.message);return;}ctl('save-config-raw',{config:o}).then(function(j){if(j.ok)editCfg=false;});}
+function delLoop(){if(!confirm(sel+' loop 삭제? config/mission/state 제거 (worktree·Linear·PR은 보존)'))return;ctl('delete-loop').then(function(){localStorage.removeItem('loop');sel=null;renderedLoop=null;load();});}
+
+function render(d){
+ if(!sel&&d.loops[0])sel=d.loops[0].id;
+ document.getElementById('looplist').innerHTML=d.loops.map(function(L){var c=L.counts||{};var tot=(c.Backlog||0)+(c['In Progress']||0)+(c['In Review']||0);return '<div class="loopitem'+(L.id===sel?' sel':'')+'" onclick="selectLoop(\''+L.id+'\')"><div class="n">'+L.emoji+' '+esc(L.name)+'</div><div class="m"><span class="dot '+(L.enabled?(L.paused?'pause':'on'):'off')+'"></span>'+(L.enabled?(L.paused?'paused':'on'):'off')+' · '+tot+' 작업'+(L.attentionCount>0?' <span style="color:#f85149">🔴'+L.attentionCount+'</span>':'')+(L.nextTs?' · 다음 '+rel(L.nextTs):'')+'</div></div>';}).join('')||'<div class=muted style="padding:8px">loop 없음</div>';
+ var gd=d.dispatcher;
+ document.getElementById('gctl').innerHTML='<span class="dot '+(gd.running?(gd.paused?'pause':'on'):'off')+'"></span>'+(gd.running?(gd.paused?'paused':'running'):'stopped')+' <button class="p" onclick="ctl(\'start\')">▶</button><button onclick="ctl(\'pause\')">⏸</button><button onclick="ctl(\'resume\')">▶▶</button><button class="d" onclick="ctl(\'stop\')">⏹</button>';
+ var L=d.loops.find(function(x){return x.id===sel;});
+ if(!L){document.getElementById('main').innerHTML='<div class="muted" style="padding:40px">왼쪽에서 loop를 선택하세요.</div>';renderedLoop=null;return;}
+ if(renderedLoop!==L.id){renderedLoop=L.id;document.getElementById('main').innerHTML='<div id="lbody"></div><div id="editors"></div>';buildEditors(L);}
+ renderBody(d,L);
+}
+function renderBody(d,L){
+ var c=L.counts||{};
+ var h='<div class="row" style="justify-content:space-between"><h1 style="margin:0;font-size:18px">'+L.emoji+' '+esc(L.name)+'</h1><div class="row">'
+  +'<button onclick="ctl(\'run-now\')">⚡ run now</button>'
+  +'<button onclick="ctl(\''+(L.paused?'loop-resume':'loop-pause')+'\')">'+(L.paused?'▶ 재개':'⏸ 일시정지')+'</button>'
+  +'<button onclick="ctl(\'toggle-enabled\')">'+(L.enabled?'끄기':'켜기')+'</button>'
+  +(L.linearProjectUrl?'<a href="'+esc(L.linearProjectUrl)+'" target=_blank><button>Linear↗</button></a>':'')
+  +'<button onclick="viewLog(\''+L.id+'\')">orch 로그</button></div></div>';
+ h+='<div class="counts" style="margin-top:8px">'+['Backlog','In Progress','In Review','Done'].map(function(k){return '<span><b>'+(c[k]||0)+'</b> <span class="chip '+scc(k)+'">'+k+'</span></span>';}).join('')+'</div>';
+ h+='<div class="sec">이슈 / 세션</div><div>'+((L.issues||[]).map(function(w){return '<div class="card"><div class="l"><span class="'+(w.alive?'live':'dead')+'">'+(w.alive?'●':'○')+'</span><b>'+esc(w.id)+'</b><span class="chip '+scc(w.state)+'">'+esc(w.state)+'</span><span class="muted" style="max-width:280px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">'+esc(w.title||'')+'</span>'+(w.attention?'<span class="chip" style="color:#f85149;border-color:#f85149">'+(attLabel[w.attention]||'🔴')+'</span>':'')+'</div><div class="row">'+(w.pr?'<a href="'+esc(w.pr)+'" target=_blank>PR↗</a>'+(w.merged?' <span class="live">✅ 머지됨</span>':(w.prState?' <span class="muted">'+esc(String(w.prState).toLowerCase())+'</span>':'')):'')+(w.url?'<a href="'+esc(w.url)+'" target=_blank>이슈↗</a>':'')+(w.alive&&w.workspace?'<button onclick="viewSession(\''+w.workspace+'\',\'🛠 '+w.id+'\')">내용보기</button>':'')+((w.alive||w.hasWorktree)?'<button onclick="ctl(\'open-issue\',{issue:\''+w.id+'\'})">cmux 열기▶</button>':'')+(w.alive&&w.workspace?'<button class="d" onclick="closeTab(\''+w.workspace+'\')">✕ 닫기</button>':'')+((w.state==='Backlog'&&!w.alive&&!/run log/i.test(w.title||''))?'<button class="p" onclick="startIssue(\''+w.id+'\')">▶ 시작</button>':'')+'</div></div>';}).join('')||'<div class=muted>이슈 없음 — ⚡run now</div>')+'</div>';
+ h+='<div class="sec">활동 피드</div><div>'+((L.feed||[]).map(function(e){if(e.type==='cycle'&&e.event==='done')return '<div class="feedline fe-cycle">🔁 '+esc(e.audit||'-')+' · 발행 '+((e.filed||[]).length)+' · spawn '+(((e.spawned||[]).join(', '))||'-')+' <span class=t>'+rel(e.ts)+'</span></div>';if(e.type==='cycle')return '<div class="feedline fe-cycle muted">🔁 cycle 시작 <span class=t>'+rel(e.ts)+'</span></div>';if(e.type==='worker')return '<div class="feedline fe-worker">🛠 '+esc(e.issue)+' spawn <span class=t>'+rel(e.ts)+'</span></div>';return'';}).join('')||'<div class=muted>활동 없음</div>')+'</div>';
+ document.getElementById('lbody').innerHTML=h;
+}
+function buildEditors(L){
+ var e=document.getElementById('editors');
+ e.innerHTML='<div class="sec">스케줄</div><div class="row"><span class="muted">시작</span> <input id="startAt" type="time"> <span class="muted">인터벌</span> <input id="ivMin" type="number"> 분 <button onclick="setSched()">적용</button> <span id="schedinfo" class="muted"></span></div>'
+  +'<div class="sec">mission (메인 프롬프트) <button onclick="saveMission()" style="float:right">저장</button></div><textarea id="missionbox" oninput="editMission=true"></textarea>'
+  +'<div class="sec">⚙️ config (raw JSON — 이름·repo·Linear·worktree·cap 등) <button onclick="saveConfig()" style="float:right">저장</button></div><textarea id="cfgbox" oninput="editCfg=true" style="min-height:220px"></textarea>'
+  +'<div class="sec" style="border-top:1px solid #30363d;padding-top:12px"><button class="d" onclick="delLoop()">🗑 이 loop 삭제</button> <span class="muted">config/mission/state만 제거 (worktree·Linear·PR 보존)</span></div>';
+ document.getElementById('startAt').value=L.schedule.startAt||'';
+ document.getElementById('ivMin').value=Math.round((L.schedule.intervalSec||3600)/60);
+ document.getElementById('schedinfo').textContent=L.nextTs?('다음 발사 '+rel(L.nextTs)):(L.enabled?'':'(loop 꺼짐)');
+ fetch('/api/mission?loop='+L.id).then(function(r){return r.text();}).then(function(t){var m=document.getElementById('missionbox');if(m&&!editMission)m.value=t;});
+ fetch('/api/config?loop='+L.id).then(function(r){return r.text();}).then(function(t){var m=document.getElementById('cfgbox');if(m&&!editCfg)m.value=t;});
+}
+var attLabel={'merge-ready':'🔴 머지 대기','ci-failed':'🔴 CI 실패','changes':'🔴 변경요청','human-gate':'🔴 사람 판단'};
+document.addEventListener('keydown',function(ev){
+ if(ev.key==='Escape'){closeS();closeC();}
+ if((ev.metaKey||ev.ctrlKey)&&(ev.key==='s'||ev.key==='S')){var a=document.activeElement;if(a&&a.id==='missionbox'){ev.preventDefault();saveMission();}else if(a&&a.id==='cfgbox'){ev.preventDefault();saveConfig();}}
+ if((ev.metaKey||ev.ctrlKey)&&ev.key==='Enter'){var a=document.activeElement;if(a&&a.id==='c_desc'){ev.preventDefault();buildLoop();}}
+});
+function load(){fetch('/api/status').then(function(r){return r.json();}).then(render).catch(function(){});}
+load();setInterval(load,3000);
+</script></body></html>

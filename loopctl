@@ -1,0 +1,20 @@
+#!/bin/zsh
+# Loops 플랫폼 제어 CLI. (대시보드 버튼과 동일 — 서버/디스패처는 cmux 패널에서 실행되어야 함)
+# usage: loopctl dashboard|start|stop|pause|resume|run-now <loop>|status
+source "${0:A:h}/bin/_common.sh"
+ROOT="$LOOPS_HOME"; STATE=$ROOT/state; PID=$STATE/dispatcher.pid; PAUSED=$STATE/PAUSED
+CMUX="$CMUX_BIN"
+mkdir -p "$STATE"
+alive(){ [[ -f "$PID" ]] && kill -0 "$(cat "$PID" 2>/dev/null)" 2>/dev/null; }
+case "${1:-status}" in
+  dashboard) "$CMUX" new-workspace --cwd "$ROOT" --command "node --watch $ROOT/dashboard-server.mjs" >/dev/null 2>&1; sleep 1; echo "📊 http://localhost:8422 (cmux 패널, hot-reload)";;
+  start)  alive && { echo "이미 running (pid $(cat $PID))"; exit 0; }
+          "$CMUX" new-workspace --cwd "$ROOT" --command "$ROOT/bin/dispatch.sh" >/dev/null 2>&1; sleep 1.5
+          echo "▶ 디스패처 시작 (cmux 패널, pid $(cat $PID 2>/dev/null))";;
+  stop)   alive && { kill "$(cat $PID)" 2>/dev/null; echo "⏹ 중지"; } || echo "안 돌고있음";;
+  pause)  touch "$PAUSED"; echo "⏸ 전역 일시정지";;
+  resume) rm -f "$PAUSED"; echo "▶ 재개";;
+  run-now) "$CMUX" new-workspace --cwd "$ROOT" --command "$ROOT/bin/spawn-orchestrator.sh ${2:?loop-id 필요}" >/dev/null 2>&1; echo "⚡ ${2} 1사이클 발사";;
+  status) if alive; then echo "● running (pid $(cat $PID))"; else echo "○ stopped"; fi; [[ -f $PAUSED ]] && echo "⏸ PAUSED"; echo "loops: $(ls "$ROOT/loops" 2>/dev/null | tr '\n' ' ')";;
+  *) echo "usage: loopctl dashboard|start|stop|pause|resume|run-now <loop>|status";;
+esac
