@@ -62,7 +62,8 @@ STEP 4 — 정지 & 기록
 ═══════════════════════════════════════════════════
 - run-log 이슈에 1코멘트: "[YYYY-MM-DD HH:MM] MODE=<..> · STEP1:<..> · STEP2:<발굴 주제, 발행 n건> · STEP3:<spawn한 ID들 또는 skip 사유>".
 - **대시보드 state 기록 (Bash로 파일 작성)**:
-  ① `{{STATE_DIR}}/snapshot.json` 덮어쓰기: `{"ts":<epoch>,"counts":{"Backlog":n,"In Progress":n,"In Review":n,"Done":n},"issues":[{"id":..,"title":..,"state":..,"url":..,"priority":..,"pr":<PR url 또는 null>,"flag":<"human-gate" 또는 null>}]}`. ⚠️ pr 값은 `gh pr view <PR> --json url`의 url을 그대로 쓴다(추측 금지). flag는 이슈 본문에 "human-gate"가 명시됐거나 worker가 사람 판단 필요로 되돌린 이슈면 `"human-gate"` (대시보드에 🔴 표시됨).
+  ① `{{STATE_DIR}}/snapshot.json` 덮어쓰기: `{"ts":<epoch>,"counts":{"Backlog":n,"In Progress":n,"In Review":n,"Done":n},"issues":[{"id":..,"title":..,"state":..,"url":..,"priority":..,"pr":<PR url 또는 null>,"flag":<"human-gate" 또는 null>,"gate":<아래>}]}`. ⚠️ pr 값은 `gh pr view <PR> --json url`의 url을 그대로 쓴다(추측 금지). flag는 이슈 본문에 "human-gate"가 명시됐거나 worker가 사람 판단 필요로 되돌린 이슈면 `"human-gate"` (대시보드에 🔴 표시됨).
+     - **`gate`**: flag가 `"human-gate"`인 이슈에 한해 `{"ask":"<사람이 무엇을 결정/판단해야 하는지 1~2문장 — 가능하면 선택지까지. 예: '인덱싱할 매물종류 화이트리스트를 정할 것(아파트/오피스텔/원룸/빌라 중). server sitemap이 실제 발행하는 조합만.'>"}`. human-gate가 아니면 `null`. 대시보드 ⚖️판단 모달이 이 `ask`를 그대로 띄워 사용자가 뭘 정해야 할지 바로 알게 한다 — 반드시 이슈 본문의 human-gate 사유를 근거로 구체적으로 쓸 것.
   ② `{{STATE_DIR}}/runs.jsonl` 에 1줄 append: `{"ts":<epoch>,"type":"cycle","event":"done","audit":"<주제>","filed":[..],"spawned":[..]}`.
 - cwd worktree를 `git checkout --detach {{BASE_REF}}`로 정리하고 정지.
 
