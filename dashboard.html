@@ -48,6 +48,11 @@ input{width:90px}textarea{width:100%;font:12px/1.5 ui-monospace,Menlo,monospace;
  <textarea id="c_mission" placeholder="이 루프가 발굴할 작업과 방법을 적으세요."></textarea>
  <div class="row" style="margin-top:10px"><button class="p" onclick="createLoop()">생성</button> <span class="muted">생성 후 off — 사이드바에서 켜세요.</span></div>
 </div></div></div>
+<div class="modal" id="gmodal"><div class="box"><div class="hd"><b id="gtitle"></b><button onclick="closeG()">✕</button></div><div class="body">
+ <p class="muted" style="margin:0 0 8px">이 <b>human-gate</b> 이슈를 어떻게 처리할지 <b>결정</b>을 적으세요. 워커가 이 지침을 최우선으로 따라 구현합니다 (이슈 본문의 human-gate는 해제됨). 보류/취소하려면 그렇게 적으면 됩니다.</p>
+ <textarea id="g_decision" style="width:100%;height:120px" placeholder="예: 매물종류 화이트리스트는 아파트·오피스텔·원룸만. server sitemap spec이 실제 발행하는 조합만 링크할 것.&#10;또는: 이 BE 작업(ProptierDanji.nearbyPreschools)은 지금 보류 — 진행하지 말 것."></textarea>
+ <div class="row" style="margin-top:10px"><button class="p" onclick="submitGate()">승인하고 워커 진행 ▶</button> <span class="muted">결정이 기록되고 즉시 워커 탭이 뜹니다.</span></div>
+</div></div></div>
 <script>
 var sel=localStorage.getItem('loop')||null, renderedLoop=null, sRef=null, sLoop=null, sTimer=null, editMission=false, editCfg=false;
 function rel(ts){if(!ts)return'';var s=Math.floor(Date.now()/1000)-ts,a=Math.abs(s),x=s<0?' 후':' 전';if(a<60)return a+'s'+x;if(a<3600)return Math.floor(a/60)+'m'+x;if(a<86400)return Math.floor(a/3600)+'h'+x;return Math.floor(a/86400)+'d'+x;}
@@ -67,6 +72,11 @@ function createLoop(){var b={id:c_id.value,name:c_name.value,emoji:c_emoji.value
 function startIssue(id){if(!confirm(id+' 지금 작업 시작? (worker 탭 생성→구현→PR)'))return;ctl('start-issue',{issue:id});}
 function closeTab(ws){if(!confirm('이 worker 탭(cmux 패널/세션)을 닫을까요?'))return;ctl('close-tab',{workspace:ws});}
 function reconcile(loop,n){if(!confirm('머지된 '+n+'건을 Linear In Review→Done 으로 정리할까요?\n(orchestrator가 머지정리만 빠르게 1회 실행 — ~1분 후 보드 갱신)'))return;ctl('reconcile',{loop:loop});}
+function toggleHideDone(){localStorage.setItem('hideDone',localStorage.getItem('hideDone')==='0'?'1':'0');load();}
+var gateId=null;
+function openGate(id){gateId=id;document.getElementById('gtitle').textContent='⚖️ '+id+' — 판단 내리기';document.getElementById('g_decision').value='';document.getElementById('gmodal').style.display='block';setTimeout(function(){document.getElementById('g_decision').focus();},50);}
+function closeG(){document.getElementById('gmodal').style.display='none';gateId=null;}
+function submitGate(){var d=document.getElementById('g_decision').value.trim();if(!d){alert('결정 내용을 입력하세요');return;}if(!confirm(gateId+' — 이 결정으로 워커를 진행할까요?\n(human-gate 해제 + 워커 탭 생성)'))return;ctl('resolve-gate',{issue:gateId,decision:d}).then(function(j){if(j&&j.ok)closeG();});}
 function setSched(){ctl('set-schedule',{startAt:document.getElementById('startAt').value,intervalMin:document.getElementById('ivMin').value});}
 function saveMission(){ctl('save-mission',{content:document.getElementById('missionbox').value}).then(function(){editMission=false;});}
 function saveConfig(){var t=document.getElementById('cfgbox').value,o;try{o=JSON.parse(t);}catch(e){alert('JSON 오류: '+e.message);return;}ctl('save-config-raw',{config:o}).then(function(j){if(j.ok)editCfg=false;});}
@@ -92,7 +102,9 @@ function renderBody(d,L){
   +(L.linearProjectUrl?'<a href="'+esc(L.linearProjectUrl)+'" target=_blank><button>Linear↗</button></a>':'')
   +'<button onclick="viewLog(\''+L.id+'\')">orch 로그</button></div></div>';
  h+='<div class="counts" style="margin-top:8px">'+['Backlog','In Progress','In Review','Done'].map(function(k){return '<span><b>'+(c[k]||0)+'</b> <span class="chip '+scc(k)+'">'+k+'</span></span>';}).join('')+'</div>';
- h+='<div class="sec">이슈 / 세션</div><div>'+((L.issues||[]).map(function(w){return '<div class="card"><div class="l"><span class="'+(w.alive?'live':'dead')+'">'+(w.alive?'●':'○')+'</span><b>'+esc(w.id)+'</b><span class="chip '+scc(w.state)+'">'+esc(w.state)+'</span><span class="muted" style="max-width:280px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">'+esc(w.title||'')+'</span>'+(w.attention?'<span class="chip" style="color:#f85149;border-color:#f85149">'+(attLabel[w.attention]||'🔴')+'</span>':'')+'</div><div class="row">'+(w.pr?'<a href="'+esc(w.pr)+'" target=_blank>PR↗</a>'+(w.merged?' <span class="live">✅ 머지됨</span>':(w.prState?' <span class="muted">'+esc(String(w.prState).toLowerCase())+'</span>':'')):'')+(w.url?'<a href="'+esc(w.url)+'" target=_blank>이슈↗</a>':'')+(w.alive&&w.workspace?'<button onclick="viewSession(\''+w.workspace+'\',\'🛠 '+w.id+'\')">내용보기</button>':'')+((w.alive||w.hasWorktree)?'<button onclick="ctl(\'open-issue\',{issue:\''+w.id+'\'})">cmux 열기▶</button>':'')+(w.alive&&w.workspace?'<button class="d" onclick="closeTab(\''+w.workspace+'\')">✕ 닫기</button>':'')+((w.state==='Backlog'&&!w.alive&&!/run log/i.test(w.title||''))?'<button class="p" onclick="startIssue(\''+w.id+'\')">▶ 시작</button>':'')+'</div></div>';}).join('')||'<div class=muted>이슈 없음 — ⚡run now</div>')+'</div>';
+ var hideDone=localStorage.getItem('hideDone')!=='0';
+ var allIts=L.issues||[]; var its=hideDone?allIts.filter(function(w){return w.state!=='Done';}):allIts; var hidden=allIts.length-its.length;
+ h+='<div class="sec">이슈 / 세션 <label style="float:right;font-weight:400;font-size:12px;cursor:pointer;color:#8b949e"><input type="checkbox" onchange="toggleHideDone()"'+(hideDone?' checked':'')+'> Done 숨김'+(hidden>0?' ('+hidden+')':'')+'</label></div><div>'+(its.map(function(w){var gate=(w.flag==='human-gate'||w.attention==='human-gate');return '<div class="card"><div class="l"><span class="'+(w.alive?'live':'dead')+'">'+(w.alive?'●':'○')+'</span><b>'+esc(w.id)+'</b><span class="chip '+scc(w.state)+'">'+esc(w.state)+'</span><span class="muted" style="max-width:280px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">'+esc(w.title||'')+'</span>'+(w.attention?'<span class="chip" style="color:#f85149;border-color:#f85149">'+(attLabel[w.attention]||'🔴')+'</span>':'')+'</div><div class="row">'+(w.pr?'<a href="'+esc(w.pr)+'" target=_blank>PR↗</a>'+(w.merged?' <span class="live">✅ 머지됨</span>':(w.prState?' <span class="muted">'+esc(String(w.prState).toLowerCase())+'</span>':'')):'')+(w.url?'<a href="'+esc(w.url)+'" target=_blank>이슈↗</a>':'')+(w.alive&&w.workspace?'<button onclick="viewSession(\''+w.workspace+'\',\'🛠 '+w.id+'\')">내용보기</button>':'')+((w.alive||w.hasWorktree)?'<button onclick="ctl(\'open-issue\',{issue:\''+w.id+'\'})">cmux 열기▶</button>':'')+(w.alive&&w.workspace?'<button class="d" onclick="closeTab(\''+w.workspace+'\')">✕ 닫기</button>':'')+(gate&&!w.alive?'<button class="p" onclick="openGate(\''+w.id+'\')">⚖️ 판단</button>':'')+((w.state==='Backlog'&&!gate&&!w.alive&&!/run log/i.test(w.title||''))?'<button class="p" onclick="startIssue(\''+w.id+'\')">▶ 시작</button>':'')+'</div></div>';}).join('')||'<div class=muted>'+(hidden>0?'(Done '+hidden+'건 숨김)':'이슈 없음 — ⚡run now')+'</div>')+'</div>';
  h+='<div class="sec">활동 피드</div><div>'+((L.feed||[]).map(function(e){if(e.type==='cycle'&&e.event==='done')return '<div class="feedline fe-cycle">🔁 '+esc(e.audit||'-')+' · 발행 '+((e.filed||[]).length)+' · spawn '+(((e.spawned||[]).join(', '))||'-')+' <span class=t>'+rel(e.ts)+'</span></div>';if(e.type==='cycle')return '<div class="feedline fe-cycle muted">🔁 cycle 시작 <span class=t>'+rel(e.ts)+'</span></div>';if(e.type==='worker')return '<div class="feedline fe-worker">🛠 '+esc(e.issue)+' spawn <span class=t>'+rel(e.ts)+'</span></div>';return'';}).join('')||'<div class=muted>활동 없음</div>')+'</div>';
  document.getElementById('lbody').innerHTML=h;
 }
@@ -110,9 +122,9 @@ function buildEditors(L){
 }
 var attLabel={'merge-ready':'🔴 머지 대기','ci-failed':'🔴 CI 실패','changes':'🔴 변경요청','human-gate':'🔴 사람 판단'};
 document.addEventListener('keydown',function(ev){
- if(ev.key==='Escape'){closeS();closeC();}
+ if(ev.key==='Escape'){closeS();closeC();closeG();}
  if((ev.metaKey||ev.ctrlKey)&&(ev.key==='s'||ev.key==='S')){var a=document.activeElement;if(a&&a.id==='missionbox'){ev.preventDefault();saveMission();}else if(a&&a.id==='cfgbox'){ev.preventDefault();saveConfig();}}
- if((ev.metaKey||ev.ctrlKey)&&ev.key==='Enter'){var a=document.activeElement;if(a&&a.id==='c_desc'){ev.preventDefault();buildLoop();}}
+ if((ev.metaKey||ev.ctrlKey)&&ev.key==='Enter'){var a=document.activeElement;if(a&&a.id==='c_desc'){ev.preventDefault();buildLoop();}else if(a&&a.id==='g_decision'){ev.preventDefault();submitGate();}}
 });
 function load(){fetch('/api/status').then(function(r){return r.json();}).then(render).catch(function(){});}
 load();setInterval(load,3000);
