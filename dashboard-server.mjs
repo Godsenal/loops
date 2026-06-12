@@ -78,6 +78,7 @@ function loopStatus(lid, allTabs) {
     schedule: cfg.schedule || { intervalSec: 3600, startAt: null }, paused: existsSync(`${st}/PAUSED`),
     nextTs, counts: snap?.counts || null, issues, feed: f.slice(-40).reverse(),
     attentionCount: issues.filter(i => i.attention).length,
+    mergedInReview: issues.filter(i => i.state === 'In Review' && i.merged).length,
   };
 }
 function status() {
@@ -104,6 +105,7 @@ async function control(a, p) {
     case 'pause': return sh('/usr/bin/touch', [GPAUSED]);
     case 'resume': return sh('/bin/rm', ['-f', GPAUSED]);
     case 'run-now': { if (!lid) return { ok: false, out: 'no loop' }; spawn(`${ROOT}/bin/spawn-orchestrator.sh`, [lid], { stdio: 'ignore' }); return { ok: true, out: lid + ' 사이클 발사' }; }
+    case 'reconcile': { if (!lid) return { ok: false, out: 'no loop' }; spawn(`${ROOT}/bin/spawn-orchestrator.sh`, [lid, 'reconcile'], { stdio: 'ignore' }); return { ok: true, out: lid + ' 머지정리 중… (Linear In Review→Done, ~1분)' }; }
     case 'loop-pause': { if (!lid) return { ok: false }; return sh('/usr/bin/touch', [`${LOOPS}/${lid}/state/PAUSED`]); }
     case 'loop-resume': { if (!lid) return { ok: false }; return sh('/bin/rm', ['-f', `${LOOPS}/${lid}/state/PAUSED`]); }
     case 'toggle-enabled': {

@@ -11,7 +11,10 @@
 - run-log 추적 이슈: 제목 "{{EMOJI}} {{LOOP_NAME}} — run log" (없으면 생성). 매 run 1코멘트.
 - 동시성 cap K = {{MAX_WORKERS}}. in-flight = (In Progress 수)+(In Review 수).
 
-실행 모드: `printenv LOOP_MODE`. "audit_only"면 STEP 3(fan-out) 건너뜀.
+실행 모드: `printenv LOOP_MODE`.
+- `full`(기본): STEP1~4 전부.
+- `audit_only`: STEP 3(fan-out) 건너뜀.
+- `reconcile`: **STEP 1(특히 머지정리)+STEP 4(스냅샷)만**. STEP 2(백로그 발굴)·STEP 3(fan-out) 건너뜀. 사용자가 대시보드에서 "머지된 거 정리"를 누르면 이 모드로 호출된다 — 빠르게 끝낸다.
 
 ═══════════════════════════════════════════════════
 STEP 0 — 준비
@@ -24,11 +27,16 @@ STEP 0 — 준비
 STEP 1 — 열린 작업 진행 (중복 방지)
 ═══════════════════════════════════════════════════
 프로젝트의 "In Review" + "In Progress" 이슈 조회.
-- 각 In Review(연결 PR): `gh pr view <PR> --json url,state,statusCheckRollup,reviewDecision,comments` 로 CI/리뷰/preview 링크 확인 → 이슈에 1줄 코멘트. **PR URL은 반드시 이 `url` 필드 값을 쓴다 (org/repo 를 추측해 직접 만들지 말 것 — origin이 GitHub mirror일 수 있으니 `gh` 가 돌려준 값만 신뢰).** CI 실패가 명백히 기계적이면 그 브랜치에서 고쳐 push. green+approved면 "✅ 머지 준비됨" 코멘트만. **절대 머지 금지.**
+- 각 In Review(연결 PR): `gh pr view <PR> --json url,state,statusCheckRollup,reviewDecision,comments` 로 상태 확인. **PR URL은 반드시 이 `url` 필드 값을 쓴다 (org/repo 를 추측해 직접 만들지 말 것 — origin이 GitHub mirror일 수 있으니 `gh` 가 돌려준 값만 신뢰).**
+  - **`state == MERGED` (사람이 머지함) → Linear 이슈를 `Done`으로 이동** + "✅ 머지됨(<url>) → Done" 코멘트. 이러면 in-flight에서 빠져 cap이 풀린다. 살아있는 worker 탭은 사용자가 닫게 둔다(여기서 건드리지 않음).
+  - `state == CLOSED`(머지 없이 닫힘) → 이슈에 "⚠️ PR이 머지 없이 닫힘 — 사람 판단 필요" 코멘트만 남기고 그대로 둔다(추측으로 Cancel/재오픈 하지 말 것).
+  - `state == OPEN`: CI/리뷰 확인 → 이슈에 1줄 코멘트. CI 실패가 명백히 기계적이면 그 브랜치에서 고쳐 push. green+approved면 "✅ 머지 준비됨" 코멘트만. **절대 머지 금지.**
 - 죽은 In Progress(PR도 worker 탭도 없음) → Backlog로 되돌리고 코멘트.
 
+**`LOOP_MODE == reconcile` 면 여기서 위 머지정리만 하고 STEP 2·3 을 건너뛰어 곧장 STEP 4 로 간다.**
+
 ═══════════════════════════════════════════════════
-STEP 2 — 백로그 보충 (Backlog < 5 일 때만)
+STEP 2 — 백로그 보충 (Backlog < 5 일 때만 · `reconcile` 모드면 건너뜀)
 ═══════════════════════════════════════════════════
 이 루프의 임무에 따라 새 work item(Linear 이슈)을 발굴한다:
 
@@ -39,7 +47,7 @@ STEP 2 — 백로그 보충 (Backlog < 5 일 때만)
 규칙: **구체적·배포가능한 finding만** 이슈화. 기존 프로젝트 이슈와 제목/대상으로 dedup. 본문 필수: [대상(URL/파일/범위)] · [문제] · [제안 fix(파일/접근)] · [기대 효과] · [수용 기준]. 사람 판단 필요/추측 불가피한 건 본문에 "human-gate" 명시. run당 가볍게(한 주제).
 
 ═══════════════════════════════════════════════════
-STEP 3 — FAN-OUT  (LOOP_MODE=audit_only면 건너뜀)
+STEP 3 — FAN-OUT  (LOOP_MODE=audit_only 또는 reconcile 면 건너뜀)
 ═══════════════════════════════════════════════════
 1. cap = min({{MAX_WORKERS}}, 환경변수 LOOP_MAX_WORKERS(없으면 {{MAX_WORKERS}})). capacity = cap − in-flight. ≤0이면 STEP4로.
 2. 최우선순위 "Backlog" 이슈를 capacity 개 고른다. **제외**: run-log 추적 이슈, 본문에 human-gate 명시된 이슈.
