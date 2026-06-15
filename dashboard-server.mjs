@@ -96,6 +96,7 @@ function activateCmux() { try { execFile('osascript', ['-e', `tell application i
 function reorderBottom(ref) { try { const n = execFileSync(CMUX, ['list-workspaces'], { encoding: 'utf8', timeout: 4000 }).split('\n').filter(l => /workspace:\d+/.test(l)).length; execFile(CMUX, ['reorder-workspace', '--workspace', ref, '--index', String(n)], () => {}); } catch {} }
 function cfgPath(lid) { return `${LOOPS}/${lid}/config.json`; }
 function worktreeOf(lid, id) { const cfg = readJSON(cfgPath(lid)) || {}; return `${cfg.worktreePrefix || ''}-${slugOf(id)}`; }
+function clearNextFire(lid) { try { execFile('/bin/rm', ['-f', `${LOOPS}/${lid}/state/next_fire`], () => {}); } catch {} }
 
 async function control(a, p) {
   const lid = p.loop;
@@ -134,7 +135,7 @@ async function control(a, p) {
       if (p.intervalMin != null) cfg.schedule.intervalSec = Math.max(60, Math.round(+p.intervalMin * 60));
       if (p.startAt !== undefined) cfg.schedule.startAt = p.startAt || null;
       writeFileSync(cfgPath(lid), JSON.stringify(cfg, null, 2));
-      try { execFile('/bin/rm', ['-f', `${LOOPS}/${lid}/state/next_fire`], () => {}); } catch {}
+      clearNextFire(lid);
       return { ok: true, out: 'schedule 저장' };
     }
     case 'focus': { if (!p.workspace) return { ok: false }; const r = await sh(CMUX, ['select-workspace', '--workspace', p.workspace]); activateCmux(); return r; }
@@ -163,7 +164,7 @@ async function control(a, p) {
       if (typeof obj === 'string') { try { obj = JSON.parse(obj); } catch (e) { return { ok: false, out: 'JSON 파싱 실패: ' + e.message }; } }
       if (!obj || obj.id !== lid) return { ok: false, out: 'id 불일치/누락 — id는 "' + lid + '" 여야 함' };
       writeFileSync(cfgPath(lid), JSON.stringify(obj, null, 2));
-      try { execFile('/bin/rm', ['-f', `${LOOPS}/${lid}/state/next_fire`], () => {}); } catch {}
+      clearNextFire(lid);
       return { ok: true, out: 'config 저장됨' };
     }
     case 'delete-loop': {
