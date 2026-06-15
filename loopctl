@@ -1,11 +1,57 @@
 #!/bin/zsh
 # Loops 플랫폼 제어 CLI. (대시보드 버튼과 동일 — 서버/디스패처는 cmux 패널에서 실행되어야 함)
-# usage: loopctl dashboard|start|stop|pause|resume|run-now <loop>|status
+# usage: loopctl dashboard|start|stop|pause|resume|run-now <loop>|worktrees <loop>|status
 source "${0:A:h}/bin/_common.sh"
 ROOT="$LOOPS_HOME"; STATE=$ROOT/state; PID=$STATE/dispatcher.pid; PAUSED=$STATE/PAUSED
 CMUX="$CMUX_BIN"
 mkdir -p "$STATE"
 alive(){ [[ -f "$PID" ]] && kill -0 "$(cat "$PID" 2>/dev/null)" 2>/dev/null; }
+cfgval(){ node -e 'const c=JSON.parse(require("fs").readFileSync(process.argv[1]));const v=process.argv[2].split(".").reduce((o,p)=>o&&o[p],c);process.stdout.write(v==null?"":String(v))' "$1" "$2"; }
+# worktrees <loop> — 읽기전용 진단. 종료된 이슈의 잔류 worktree를 표면화(삭제는 안 함, 사람 몫).
+worktrees(){
+  local loop="${1:-}"
+  [[ -z "$loop" ]] && { echo "usage: loopctl worktrees <loop>"; return 1; }
+  local cfg="$ROOT/loops/$loop/config.json"
+  [[ -f "$cfg" ]] || { echo "loop '$loop' config 없음 ($cfg) — worktree 목록 비어있음"; return 0; }
+  local repo prefix; repo="$(cfgval "$cfg" repo)"; prefix="$(cfgval "$cfg" worktreePrefix)"
+  [[ -z "$repo" || -z "$prefix" ]] && { echo "config에 repo/worktreePrefix 없음 — 진단 불가"; return 0; }
+  # snapshot(slug→id·state) 로드. 없으면 깨지지 말고 ? 표기.
+  local snap="$ROOT/loops/$loop/state/snapshot.json"
+  typeset -A SNAPID SNAPST; local sl id st
+  if [[ -f "$snap" ]]; then
+    while IFS=$'\t' read -r sl id st; do SNAPID[$sl]="$id"; SNAPST[$sl]="$st"; done < <(
+      node -e 'const s=JSON.parse(require("fs").readFileSync(process.argv[1]));for(const i of (s.issues||[])){const g=String(i.id||"").toLowerCase().replace(/[^a-z0-9]+/g,"-").replace(/-+$/,"");process.stdout.write(g+"\t"+(i.id||"?")+"\t"+(i.state||"?")+"\n")}' "$snap")
+  else
+    echo "ℹ️ snapshot 없음 ($snap) — state는 ? 로 표기"
+  fi
+  echo "🧹 worktrees — $loop  (repo: $repo)"
+  # git worktree 목록에서 worker worktree(${prefix}-<slug>)만 추림. orchestrator(=${prefix})·main은 제외.
+  local -a paths branches; local wt="" br="?" line
+  while IFS= read -r line; do
+    case "$line" in
+      "worktree "*) [[ -n "$wt" ]] && { paths+=("$wt"); branches+=("$br"); }; wt="${line#worktree }"; br="?" ;;
+      "branch refs/heads/"*) br="${line#branch refs/heads/}" ;;
+      "detached") br="(detached)" ;;
+    esac
+  done <<< "$(git -C "$repo" worktree list --porcelain 2>/dev/null)"
+  [[ -n "$wt" ]] && { paths+=("$wt"); branches+=("$br"); }
+  local count=0 i p b slug suffix
+  for ((i=1; i<=${#paths[@]}; i++)); do
+    p="${paths[$i]}"; b="${branches[$i]}"
+    case "$p" in
+      "${prefix}-"*)
+        slug="${p#"$prefix"-}"; id="${SNAPID[$slug]:-?}"; st="${SNAPST[$slug]:-?}"; suffix=""
+        [[ "$st" == "Done" || "$st" == "Canceled" ]] && suffix="  🧹 정리 후보"
+        printf '%s  %s  %s  %s%s\n' "$p" "$b" "$id" "$st" "$suffix"
+        count=$((count+1)) ;;
+    esac
+  done
+  if (( count == 0 )); then
+    echo "(worktreePrefix '${prefix}-…' 로 시작하는 worktree 없음)"
+  else
+    echo "정리하려면: git -C \"$repo\" worktree remove <경로> && git -C \"$repo\" branch -D <branch>"
+  fi
+}
 case "${1:-status}" in
   dashboard) "$CMUX" new-workspace --cwd "$ROOT" --command "node --watch $ROOT/dashboard-server.mjs" >/dev/null 2>&1; sleep 1; echo "📊 http://localhost:8422 (cmux 패널, hot-reload)";;
   start)  alive && { echo "이미 running (pid $(cat $PID))"; exit 0; }
@@ -15,6 +61,7 @@ case "${1:-status}" in
   pause)  touch "$PAUSED"; echo "⏸ 전역 일시정지";;
   resume) rm -f "$PAUSED"; echo "▶ 재개";;
   run-now) "$CMUX" new-workspace --cwd "$ROOT" --command "$ROOT/bin/spawn-orchestrator.sh ${2:?loop-id 필요}" >/dev/null 2>&1; echo "⚡ ${2} 1사이클 발사";;
+  worktrees) worktrees "${2:-}";;
   status) if alive; then echo "● running (pid $(cat $PID))"; else echo "○ stopped"; fi; [[ -f $PAUSED ]] && echo "⏸ PAUSED"; echo "loops: $(ls "$ROOT/loops" 2>/dev/null | tr '\n' ' ')";;
-  *) echo "usage: loopctl dashboard|start|stop|pause|resume|run-now <loop>|status";;
+  *) echo "usage: loopctl dashboard|start|stop|pause|resume|run-now <loop>|worktrees <loop>|status";;
 esac
