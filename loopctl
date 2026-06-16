@@ -1,6 +1,6 @@
 #!/bin/zsh
 # Loops 플랫폼 제어 CLI. (대시보드 버튼과 동일 — 서버/디스패처는 cmux 패널에서 실행되어야 함)
-# usage: loopctl dashboard|start|stop|pause|resume|run-now <loop>|worktrees <loop>|status
+# usage: loopctl dashboard|start|stop|pause|resume|run-now <loop>|worktrees <loop>|remote|status
 source "${0:A:h}/bin/_common.sh"
 ROOT="$LOOPS_HOME"; STATE=$ROOT/state; PID=$STATE/dispatcher.pid; PAUSED=$STATE/PAUSED
 CMUX="$CMUX_BIN"
@@ -62,6 +62,20 @@ case "${1:-status}" in
   resume) rm -f "$PAUSED"; echo "▶ 재개";;
   run-now) "$CMUX" new-workspace --cwd "$ROOT" --command "$ROOT/bin/spawn-orchestrator.sh ${2:?loop-id 필요}" >/dev/null 2>&1; echo "⚡ ${2} 1사이클 발사";;
   worktrees) worktrees "${2:-}";;
+  remote) # ngrok basic-auth 터널로 대시보드를 외부에 안전 노출. 인증값 없으면 자동생성 → loops.env(gitignore) 저장.
+          AUTH="${LOOPS_REMOTE_AUTH:-}"
+          if [[ -z "$AUTH" ]]; then
+            pass="$(LC_ALL=C tr -dc 'A-Za-z0-9' </dev/urandom | head -c 20)"
+            AUTH="loops:$pass"
+            print -r -- "LOOPS_REMOTE_AUTH=$AUTH" >> "$ROOT/loops.env"
+            echo "🔑 원격 접속 계정 생성 → loops.env 저장 (gitignore됨)"
+          fi
+          command -v ngrok >/dev/null || { echo "ngrok 없음 — 'brew install ngrok' 후 'ngrok config add-authtoken …'"; exit 1; }
+          curl -s -o /dev/null "http://localhost:${LOOPS_PORT:-8422}/" 2>/dev/null || echo "⚠️  대시보드 미실행 — 다른 패널에서 'loopctl dashboard' 먼저"
+          echo "🌐 ngrok 터널 시작 — 아래 'Forwarding  https://…' 주소로 폰/PC 어디서나 접속:"
+          echo "   로그인  →  ${AUTH%%:*} / ${AUTH#*:}"
+          echo "   (Ctrl-C 종료 · 무료 티어는 URL이 재시작마다 바뀜 · basic-auth가 파괴적 API를 보호)"
+          exec ngrok http "${LOOPS_PORT:-8422}" --basic-auth "$AUTH";;
   status) if alive; then echo "● running (pid $(cat $PID))"; else echo "○ stopped"; fi; [[ -f $PAUSED ]] && echo "⏸ PAUSED"; echo "loops: $(ls "$ROOT/loops" 2>/dev/null | tr '\n' ' ')";;
-  *) echo "usage: loopctl dashboard|start|stop|pause|resume|run-now <loop>|worktrees <loop>|status";;
+  *) echo "usage: loopctl dashboard|start|stop|pause|resume|run-now <loop>|worktrees <loop>|remote|status";;
 esac
