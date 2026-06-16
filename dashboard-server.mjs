@@ -254,6 +254,7 @@ async function control(a, p) {
 
 function sessionText(u) {
   if (u.searchParams.get('ref')) { try { return execFileSync(CMUX, ['read-screen', '--workspace', u.searchParams.get('ref'), '--lines', '300'], { encoding: 'utf8', timeout: 5000 }); } catch (e) { return '(read-screen 실패)'; } }
+  if (u.searchParams.get('dispatcher')) return readText(`${GSTATE}/dispatcher.log`).split('\n').slice(-300).join('\n');
   const lid = u.searchParams.get('loop'); if (lid) return readText(`${LOOPS}/${lid}/state/run.log`).split('\n').slice(-300).join('\n');
   return '(no ref/loop)';
 }
