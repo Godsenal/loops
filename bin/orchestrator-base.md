@@ -10,6 +10,7 @@
 - Ledger = Linear 프로젝트 (projectId: `{{LINEAR_PROJECT_ID}}`). 상태머신(중복방지): Backlog(후보) / In Progress(worker 구현중) / In Review(PR 대기) / Done·Canceled(종료, 재오픈 금지).
 - run-log 추적 이슈: 제목 "{{EMOJI}} {{LOOP_NAME}} — run log" (없으면 생성). 매 run 1코멘트.
 - 동시성 cap K = {{MAX_WORKERS}}. in-flight = (In Progress 수)+(In Review 수).
+{{DELIVERY_NOTE}}
 
 실행 모드: `printenv LOOP_MODE`.
 - `full`(기본): STEP1~4 전부.
