@@ -1,36 +1,96 @@
 <!doctype html><html lang="ko"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <title>Loops</title><style>
-*{box-sizing:border-box}body{margin:0;background:#0d1117;color:#e6edf3;font:14px/1.5 -apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;display:flex;height:100vh;overflow:hidden}
-button{background:#21262d;color:#e6edf3;border:1px solid #30363d;border-radius:6px;padding:5px 10px;cursor:pointer;font:inherit;font-size:13px}
-button:hover{background:#30363d}button.p{background:#238636;border-color:#2ea043}button.p:hover{background:#2ea043}button.d{background:#3d1417;border-color:#6e2528}
-input,textarea{background:#0d1117;color:#e6edf3;border:1px solid #30363d;border-radius:6px;padding:5px 8px;font:inherit}
-input{width:90px}textarea{width:100%;font:12px/1.5 ui-monospace,Menlo,monospace;min-height:160px;resize:vertical}
-.muted{color:#8b949e}.dot{width:8px;height:8px;border-radius:50%;display:inline-block;margin-right:5px}.on{background:#3fb950}.off{background:#6e7681}.pause{background:#d29922}
-.chip{padding:1px 7px;border-radius:10px;font-size:12px;border:1px solid #30363d}
-.s-Backlog{color:#8b949e}.s-InProgress{color:#d29922;border-color:#d29922}.s-InReview{color:#58a6ff;border-color:#58a6ff}.s-Done{color:#3fb950;border-color:#3fb950}
-#side{width:230px;border-right:1px solid #30363d;background:#161b22;overflow-y:auto;flex-shrink:0;padding:10px}
-#side h2{font-size:12px;text-transform:uppercase;color:#8b949e;letter-spacing:.5px;margin:6px 4px}
-#attnsum{margin:0 4px 8px;font-size:12px}#attnsum .attn{color:#f85149;font-weight:600;cursor:pointer}#attnsum .clean{color:#8b949e}
-.loopitem{padding:8px 10px;border-radius:8px;cursor:pointer;margin-bottom:4px;border:1px solid transparent}
-.loopitem:hover{background:#21262d}.loopitem.sel{background:#21262d;border-color:#30363d}
-.loopitem .n{font-weight:600}.loopitem .m{font-size:11px;color:#8b949e}
-#main{flex:1;overflow-y:auto;padding:16px 20px}
+/* ===== design tokens (shadcn-inspired) ===== */
+:root{
+ --bg:#09090b;--panel:#0c0c0f;--card:#101014;--card-hover:#17171c;
+ --border:#242429;--border-strong:#34343d;
+ --fg:#e8e8ec;--muted:#a1a1aa;--muted2:#71717a;
+ --primary:#16a34a;--primary-hover:#22c55e;--primary-fg:#fff;
+ --success:#22c55e;--warning:#f59e0b;--danger:#f04848;--info:#3b82f6;
+ --danger-bg:#2a1416;
+ --console:#0a0a0b;--console-fg:#cdd3da;
+ --radius:9px;--radius-sm:6px;--radius-lg:13px;
+ --shadow:none;
+}
+[data-theme=light]{
+ --bg:#f6f6f7;--panel:#ffffff;--card:#ffffff;--card-hover:#f4f4f5;
+ --border:#e7e7ea;--border-strong:#d4d4d8;
+ --fg:#18181b;--muted:#52525b;--muted2:#8a8a93;
+ --primary:#16a34a;--primary-hover:#15803d;--primary-fg:#fff;
+ --success:#16a34a;--warning:#b45309;--danger:#dc2626;--info:#2563eb;
+ --danger-bg:#fef2f2;
+ --console:#0c0c0f;--console-fg:#cdd3da;
+ --shadow:0 1px 2px rgba(0,0,0,.05),0 1px 3px rgba(0,0,0,.04);
+}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--fg);font:14px/1.55 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;display:flex;height:100vh;overflow:hidden;-webkit-font-smoothing:antialiased}
+::-webkit-scrollbar{width:11px;height:11px}::-webkit-scrollbar-thumb{background:var(--border-strong);border-radius:7px;border:3px solid transparent;background-clip:padding-box}::-webkit-scrollbar-thumb:hover{background:var(--muted2)}::-webkit-scrollbar-track{background:transparent}
+/* ===== buttons ===== */
+button{background:var(--card);color:var(--fg);border:1px solid var(--border);border-radius:var(--radius-sm);padding:5px 11px;cursor:pointer;font:inherit;font-size:13px;font-weight:500;line-height:1.4;transition:background .12s,border-color .12s,opacity .12s;display:inline-flex;align-items:center;gap:5px;white-space:nowrap}
+button:hover{background:var(--card-hover);border-color:var(--border-strong)}
+button:active{opacity:.85}
+button:focus-visible{outline:none;box-shadow:0 0 0 2px var(--bg),0 0 0 4px color-mix(in srgb,var(--primary) 55%,transparent)}
+button.p{background:var(--primary);border-color:transparent;color:var(--primary-fg)}
+button.p:hover{background:var(--primary-hover);border-color:transparent}
+button.d{background:transparent;border-color:color-mix(in srgb,var(--danger) 42%,var(--border));color:var(--danger)}
+button.d:hover{background:var(--danger-bg);border-color:var(--danger)}
+button.ghost{background:transparent;border-color:transparent;padding:4px 8px}
+button.ghost:hover{background:var(--card-hover);border-color:transparent}
+/* ===== inputs ===== */
+input,textarea,select{background:var(--bg);color:var(--fg);border:1px solid var(--border);border-radius:var(--radius-sm);padding:6px 9px;font:inherit;transition:border-color .12s,box-shadow .12s}
+input:focus,textarea:focus,select:focus{outline:none;border-color:var(--primary);box-shadow:0 0 0 3px color-mix(in srgb,var(--primary) 22%,transparent)}
+input{width:90px}
+textarea{width:100%;font:12.5px/1.55 ui-monospace,SFMono-Regular,Menlo,monospace;min-height:160px;resize:vertical}
+/* ===== bits ===== */
+.muted{color:var(--muted)}
+.dot{width:7px;height:7px;border-radius:50%;display:inline-block;margin-right:6px;vertical-align:middle}
+.on{background:var(--success);box-shadow:0 0 0 3px color-mix(in srgb,var(--success) 24%,transparent)}
+.off{background:var(--muted2)}
+.pause{background:var(--warning);box-shadow:0 0 0 3px color-mix(in srgb,var(--warning) 24%,transparent)}
+.chip{padding:1px 8px;border-radius:999px;font-size:11.5px;font-weight:500;border:1px solid var(--border);color:var(--muted);white-space:nowrap;display:inline-flex;align-items:center;gap:3px}
+.s-Backlog{color:var(--muted)}
+.s-InProgress{color:var(--warning);border-color:color-mix(in srgb,var(--warning) 42%,transparent);background:color-mix(in srgb,var(--warning) 11%,transparent)}
+.s-InReview{color:var(--info);border-color:color-mix(in srgb,var(--info) 42%,transparent);background:color-mix(in srgb,var(--info) 11%,transparent)}
+.s-Done{color:var(--success);border-color:color-mix(in srgb,var(--success) 42%,transparent);background:color-mix(in srgb,var(--success) 11%,transparent)}
+/* ===== sidebar ===== */
+#side{width:250px;border-right:1px solid var(--border);background:var(--panel);overflow-y:auto;flex-shrink:0;padding:12px 10px;display:flex;flex-direction:column}
+#side h2{font-size:13px;font-weight:600;color:var(--fg);letter-spacing:-.1px;margin:4px 4px;text-transform:none}
+#attnsum{margin:0 4px 10px;font-size:12.5px}#attnsum .attn{color:var(--danger);font-weight:600;cursor:pointer}#attnsum .clean{color:var(--muted2)}
+.loopitem{padding:9px 10px;border-radius:var(--radius);cursor:pointer;margin-bottom:3px;border:1px solid transparent;transition:background .12s,border-color .12s}
+.loopitem:hover{background:var(--card-hover)}
+.loopitem.sel{background:var(--card-hover);border-color:var(--border)}
+.loopitem .n{font-weight:600;letter-spacing:-.1px}
+.loopitem .m{font-size:11.5px;color:var(--muted);margin-top:2px}
+/* ===== main ===== */
+#main{flex:1;overflow-y:auto;padding:20px 26px 44px}
 .row{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
-.sec{margin:16px 0 8px;color:#8b949e;font-size:12px;text-transform:uppercase;letter-spacing:.5px}
-.card{background:#161b22;border:1px solid #30363d;border-radius:8px;padding:9px 12px;margin-bottom:7px;display:flex;gap:10px;align-items:center;justify-content:space-between}
-.card .l{display:flex;gap:8px;align-items:center;min-width:0}.card a{color:#58a6ff;text-decoration:none}
-.live{color:#3fb950}.dead{color:#6e7681}.t{color:#6e7681;font-size:12px}
-.feedline{padding:5px 10px;border-left:2px solid #30363d;margin-bottom:3px;font-size:13px}.fe-cycle{border-color:#bb8009}.fe-worker{border-color:#1f6feb}
-.counts{display:flex;gap:14px}.counts b{font-size:17px}
-.modal{display:none;position:fixed;inset:0;background:rgba(0,0,0,.65);z-index:50;padding:28px}
-.modal .box{background:#0d1117;border:1px solid #30363d;border-radius:10px;max-width:980px;margin:0 auto;height:100%;display:flex;flex-direction:column}
-.modal .hd{padding:10px 14px;border-bottom:1px solid #30363d;display:flex;justify-content:space-between;align-items:center}
-.modal pre{flex:1;overflow:auto;margin:0;padding:12px;font:12px/1.45 ui-monospace,Menlo,monospace;white-space:pre-wrap;color:#c9d1d9}
-.modal .body{padding:14px;overflow:auto}
-.fld{display:flex;gap:8px;align-items:center;margin-bottom:8px}.fld label{width:120px;color:#8b949e;font-size:13px}.fld input{width:auto;flex:1}
+.sec{margin:22px 0 9px;color:var(--muted2);font-size:11.5px;font-weight:600;text-transform:uppercase;letter-spacing:.6px}
+h1{letter-spacing:-.3px}
+/* ===== cards / issues ===== */
+.card{background:var(--card);border:1px solid var(--border);border-radius:var(--radius);padding:10px 13px;margin-bottom:7px;display:flex;gap:10px;align-items:center;justify-content:space-between;box-shadow:var(--shadow);transition:border-color .12s,background .12s}
+.card:hover{border-color:var(--border-strong)}
+.card .l{display:flex;gap:9px;align-items:center;min-width:0}
+.card a{color:var(--info);text-decoration:none;font-weight:500}.card a:hover{text-decoration:underline}
+.live{color:var(--success)}.dead{color:var(--muted2)}.t{color:var(--muted2);font-size:12px}
+/* ===== feed ===== */
+.feedline{padding:6px 11px;border-left:2px solid var(--border);margin-bottom:3px;font-size:13px;color:var(--fg)}
+.fe-cycle{border-color:var(--warning)}.fe-worker{border-color:var(--info)}
+/* ===== stat tiles ===== */
+.counts{display:flex;gap:9px;margin-top:10px}
+.counts>span{display:inline-flex;flex-direction:column;gap:4px;background:var(--card);border:1px solid var(--border);border-radius:var(--radius);padding:9px 14px;min-width:86px;box-shadow:var(--shadow)}
+.counts b{font-size:21px;font-weight:700;letter-spacing:-.5px;line-height:1}
+/* ===== modal ===== */
+.modal{display:none;position:fixed;inset:0;background:rgba(0,0,0,.6);backdrop-filter:blur(3px);z-index:50;padding:32px}
+.modal .box{background:var(--panel);border:1px solid var(--border);border-radius:var(--radius-lg);max-width:980px;margin:0 auto;height:100%;display:flex;flex-direction:column;box-shadow:0 24px 64px rgba(0,0,0,.45);overflow:hidden}
+.modal .hd{padding:13px 16px;border-bottom:1px solid var(--border);display:flex;justify-content:space-between;align-items:center;font-size:15px}
+.modal pre{flex:1;overflow:auto;margin:0;padding:14px;font:12px/1.5 ui-monospace,Menlo,monospace;white-space:pre-wrap;color:var(--console-fg);background:var(--console)}
+.modal .body{padding:16px 18px;overflow:auto}
+.fld{display:flex;gap:10px;align-items:center;margin-bottom:9px}.fld label{width:130px;color:var(--muted);font-size:13px;flex-shrink:0}.fld input{width:auto;flex:1}
+/* ===== misc ===== */
 .spin{display:inline-block;animation:spin 1.4s linear infinite}@keyframes spin{to{transform:rotate(360deg)}}
 </style></head><body>
-<div id="side"><div class="row" style="justify-content:space-between"><h2>Loops</h2><button onclick="openCreate()">+ 새 loop</button></div><div id="attnsum"></div><div id="looplist"></div>
+<div id="side"><div class="row" style="justify-content:space-between;margin-bottom:8px"><h2>⟳ Loops</h2><button class="ghost" id="themebtn" title="라이트/다크 전환" onclick="toggleTheme()">🌙</button></div>
+<button class="p" style="width:100%;justify-content:center;margin-bottom:12px" onclick="openCreate()">+ 새 loop</button><div id="attnsum"></div><div id="looplist"></div>
 <div class="sec">디스패처(전역)</div><div id="gctl" class="row"></div></div>
 <div id="main"></div>
 
@@ -51,7 +111,7 @@ input{width:90px}textarea{width:100%;font:12px/1.5 ui-monospace,Menlo,monospace;
  <div class="row" style="margin-top:10px"><button class="p" onclick="createLoop()">생성</button> <span class="muted">생성 후 off — 사이드바에서 켜세요.</span></div>
 </div></div></div>
 <div class="modal" id="gmodal"><div class="box"><div class="hd"><b id="gtitle"></b><button onclick="closeG()">✕</button></div><div class="body">
- <div id="gctx" style="background:#161b22;border:1px solid #30363d;border-left:3px solid #d29922;border-radius:6px;padding:10px 12px;margin-bottom:10px;font-size:13px;line-height:1.5"></div>
+ <div id="gctx" style="background:var(--card);border:1px solid var(--border);border-left:3px solid var(--warning);border-radius:var(--radius-sm);padding:10px 12px;margin-bottom:10px;font-size:13px;line-height:1.5"></div>
  <p class="muted" style="margin:0 0 8px">위 내용을 보고 <b>결정</b>을 적으세요. 워커가 이 지침을 최우선으로 따라 구현합니다 (이슈 본문의 human-gate는 해제됨). 보류/취소하려면 그렇게 적으면 됩니다.</p>
  <textarea id="g_decision" style="width:100%;height:120px" placeholder="예: 매물종류 화이트리스트는 아파트·오피스텔·원룸만. server sitemap spec이 실제 발행하는 조합만 링크할 것.&#10;또는: 이 BE 작업(ProptierDanji.nearbyPreschools)은 지금 보류 — 진행하지 말 것."></textarea>
  <div class="row" style="margin-top:10px"><button class="p" onclick="submitGate()">승인하고 워커 진행 ▶</button> <span class="muted">결정이 기록되고 즉시 워커 탭이 뜹니다.</span></div>
@@ -64,10 +124,13 @@ input{width:90px}textarea{width:100%;font:12px/1.5 ui-monospace,Menlo,monospace;
  <div class="sec">⚙️ config <button class="p" onclick="saveConfig()" style="float:right">저장</button></div>
  <div id="cfgform"></div>
  <details style="margin-top:10px"><summary class="muted" style="cursor:pointer;font-size:12px">고급 — raw JSON 직접 편집 (위 폼에 없는 필드까지)</summary><textarea id="cfgbox" style="height:200px;margin-top:8px"></textarea><div><button onclick="saveConfigRaw()" style="margin-top:6px">raw JSON 저장</button></div></details>
- <div class="sec" style="border-top:1px solid #30363d;padding-top:12px;margin-top:14px"><button class="d" onclick="delLoop()">🗑 이 loop 삭제</button> <span class="muted">config/mission/state만 제거 (worktree·Linear·PR 보존)</span></div>
+ <div class="sec" style="border-top:1px solid var(--border);padding-top:12px;margin-top:14px"><button class="d" onclick="delLoop()">🗑 이 loop 삭제</button> <span class="muted">config/mission/state만 제거 (worktree·Linear·PR 보존)</span></div>
 </div></div></div>
 <script>
 var sel=localStorage.getItem('loop')||null, renderedLoop=null, sRef=null, sLoop=null, sTimer=null, lastData=null;
+function applyTheme(t){document.documentElement.dataset.theme=t;var b=document.getElementById('themebtn');if(b)b.textContent=t==='light'?'☀️':'🌙';}
+function toggleTheme(){var t=(localStorage.getItem('theme')||'dark')==='light'?'dark':'light';localStorage.setItem('theme',t);applyTheme(t);}
+applyTheme(localStorage.getItem('theme')||'dark');
 var CFG_FIELDS=[{k:'name',label:'이름'},{k:'emoji',label:'emoji'},{k:'maxWorkers',label:'동시 워커 수(cap)',type:'number',def:2,hint:'동시에 열리는 PR/워커 최대치'},{k:'backlogTarget',label:'백로그 목표(개)',type:'number',def:5,hint:'백로그가 이 수보다 적을 때만 새 작업 발굴 (기본 5)'},{k:'repo',label:'repo 경로'},{k:'baseRef',label:'base ref',hint:'근거·구현 기준 (예 origin/develop)'},{k:'prBase',label:'PR base 브랜치'},{k:'branchPrefix',label:'브랜치 prefix'},{k:'orchestratorWorktree',label:'orch worktree'},{k:'worktreePrefix',label:'worker worktree prefix'},{k:'linearProjectId',label:'Linear projectId'},{k:'linearProjectUrl',label:'Linear projectUrl'}];
 function rel(ts){if(!ts)return'';var s=Math.floor(Date.now()/1000)-ts,a=Math.abs(s),x=s<0?' 후':' 전';if(a<60)return a+'s'+x;if(a<3600)return Math.floor(a/60)+'m'+x;if(a<86400)return Math.floor(a/3600)+'h'+x;return Math.floor(a/86400)+'d'+x;}
 function esc(x){return String(x==null?'':x).replace(/[&<>"]/g,function(c){return{'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c];});}
@@ -91,7 +154,7 @@ function runNow(){ctl('run-now').then(function(j){if(j&&j.ok){viewLog(sel);}});}
 function toggleHideDone(){localStorage.setItem('hideDone',localStorage.getItem('hideDone')==='0'?'1':'0');load();}
 var gateId=null,gateInfo={};
 function openGate(id){gateId=id;var g=gateInfo[id]||{};document.getElementById('gtitle').textContent='⚖️ '+id+' — 판단 내리기';
- var ctx='<div style="font-weight:600;margin-bottom:6px">'+esc(g.title||id)+'</div>'+(g.ask?'<div><span style="color:#d29922">🤔 결정할 것:</span> '+esc(g.ask)+'</div>':'<div class="muted">이 human-gate의 상세 사유는 전체 본문에서 확인하세요 (orchestrator가 아직 요약을 안 남겼습니다).</div>')+(g.url?'<div style="margin-top:6px"><a href="'+esc(g.url)+'" target=_blank>전체 본문 ↗</a></div>':'');
+ var ctx='<div style="font-weight:600;margin-bottom:6px">'+esc(g.title||id)+'</div>'+(g.ask?'<div><span style="color:var(--warning)">🤔 결정할 것:</span> '+esc(g.ask)+'</div>':'<div class="muted">이 human-gate의 상세 사유는 전체 본문에서 확인하세요 (orchestrator가 아직 요약을 안 남겼습니다).</div>')+(g.url?'<div style="margin-top:6px"><a href="'+esc(g.url)+'" target=_blank>전체 본문 ↗</a></div>':'');
  document.getElementById('gctx').innerHTML=ctx;
  document.getElementById('g_decision').value='';document.getElementById('gmodal').style.display='block';setTimeout(function(){document.getElementById('g_decision').focus();},50);}
 function closeG(){document.getElementById('gmodal').style.display='none';gateId=null;}
@@ -104,11 +167,11 @@ function delLoop(){if(!confirm(sel+' loop 삭제? config/mission/state 제거 (w
 function render(d){
  lastData=d;
  if(!sel&&d.loops[0])sel=d.loops[0].id;
- document.getElementById('looplist').innerHTML=d.loops.map(function(L){var c=L.counts||{};var tot=(c.Backlog||0)+(c['In Progress']||0)+(c['In Review']||0);return '<div class="loopitem'+(L.id===sel?' sel':'')+'" onclick="selectLoop(\''+L.id+'\')"><div class="n">'+L.emoji+' '+esc(L.name)+'</div><div class="m"><span class="dot '+(L.enabled?(L.paused?'pause':'on'):'off')+'"></span>'+(L.enabled?(L.paused?'paused':'on'):'off')+' · '+tot+' 작업'+(L.orchRunning?' <span class="spin">⏳</span>실행중':'')+(L.attentionCount>0?' <span style="color:#f85149">🔴'+L.attentionCount+'</span>':'')+(L.nextTs?' · 다음 '+rel(L.nextTs):'')+'</div></div>';}).join('')||'<div class=muted style="padding:8px">loop 없음</div>';
+ document.getElementById('looplist').innerHTML=d.loops.map(function(L){var c=L.counts||{};var tot=(c.Backlog||0)+(c['In Progress']||0)+(c['In Review']||0);return '<div class="loopitem'+(L.id===sel?' sel':'')+'" onclick="selectLoop(\''+L.id+'\')"><div class="n">'+L.emoji+' '+esc(L.name)+'</div><div class="m"><span class="dot '+(L.enabled?(L.paused?'pause':'on'):'off')+'"></span>'+(L.enabled?(L.paused?'paused':'on'):'off')+' · '+tot+' 작업'+(L.orchRunning?' <span class="spin">⏳</span>실행중':'')+(L.attentionCount>0?' <span style="color:var(--danger)">🔴'+L.attentionCount+'</span>':'')+(L.nextTs?' · 다음 '+rel(L.nextTs):'')+'</div></div>';}).join('')||'<div class=muted style="padding:8px">loop 없음</div>';
  var attn=d.loops.reduce(function(s,L){return s+(L.attentionCount||0);},0);
  document.getElementById('attnsum').innerHTML=attn>0?'<span class="attn" onclick="selectAttention()" title="개입 필요한 첫 loop로 이동">🔴 '+attn+'건 개입 필요</span>':'<span class="clean">✓ clean</span>';
  var gd=d.dispatcher;
- document.getElementById('gctl').innerHTML='<span class="dot '+(gd.running?(gd.paused?'pause':'on'):'off')+'"></span>'+(gd.running?(gd.paused?'paused':'running'):'stopped')+' <button class="p" onclick="ctl(\'start\')">▶</button><button onclick="ctl(\'pause\')">⏸</button><button onclick="ctl(\'resume\')">▶▶</button><button class="d" onclick="ctl(\'stop\')">⏹</button>';
+ document.getElementById('gctl').innerHTML='<span class="dot '+(gd.running?(gd.paused?'pause':'on'):'off')+'"></span>'+(gd.running?(gd.paused?'paused':'running'):'stopped')+' <button class="p" onclick="ctl(\'start\')">▶</button><button onclick="ctl(\'pause\')">⏸</button><button onclick="ctl(\'resume\')">▶▶</button><button class="d" onclick="ctl(\'stop\')">⏹</button>'+'<button class="'+(d.awake?'p':'')+'" title="ON이면 caffeinate로 idle 잠자기를 막아 맥이 깨어있고 디스패처가 계속 돕니다. ⚠️ 노트북 뚜껑을 닫는 잠자기는 막지 못합니다(전원 연결+뚜껑 열어두기 권장). 맥이 꺼지면 당연히 안 돕니다." onclick="ctl(\''+(d.awake?'awake-off':'awake-on')+'\')">'+(d.awake?'☕ 안잠(ON)':'💤 잠자기방지 OFF')+'</button>';
  var L=d.loops.find(function(x){return x.id===sel;});
  if(!L){document.getElementById('main').innerHTML='<div class="muted" style="padding:40px">왼쪽에서 loop를 선택하세요.</div>';renderedLoop=null;return;}
  if(renderedLoop!==L.id){renderedLoop=L.id;document.getElementById('main').innerHTML='<div id="lbody"></div>';}
@@ -130,15 +193,15 @@ function renderBody(d,L){
  var actionable=_bl.filter(function(w){return w.state==='Backlog'&&w.flag!=='human-gate'&&w.attention!=='human-gate'&&!/run log/i.test(w.title||'');}).length;
  var gated=_bl.filter(function(w){return w.state==='Backlog'&&(w.flag==='human-gate'||w.attention==='human-gate');}).length;
  var bmsg,bcol;
- if(capacity<=0){bmsg='⛔ 실행 막힘 — 워커 슬롯 '+inflight+'/'+cap+' 꽉 참 (In Review PR 머지 대기). PR을 머지하면 다음 run이 backlog를 실행합니다.';bcol='#d29922';}
- else if(actionable>0){bmsg='▶ 다음 run에 최대 '+Math.min(capacity,actionable)+'건 실행 (여유 슬롯 '+capacity+'/'+cap+', 실행대기 backlog '+actionable+')';bcol='#3fb950';}
- else if(gated>0){bmsg='⚖️ 실행할 backlog 없음 — '+gated+'건이 human-gate (⚖️ 판단으로 풀어야 실행 후보가 됩니다)';bcol='#d29922';}
- else{bmsg='유휴 — 실행할 backlog 없음. 다음 audit이 새 작업을 발굴합니다.';bcol='#8b949e';}
+ if(capacity<=0){bmsg='⛔ 실행 막힘 — 워커 슬롯 '+inflight+'/'+cap+' 꽉 참 (In Review PR 머지 대기). PR을 머지하면 다음 run이 backlog를 실행합니다.';bcol='var(--warning)';}
+ else if(actionable>0){bmsg='▶ 다음 run에 최대 '+Math.min(capacity,actionable)+'건 실행 (여유 슬롯 '+capacity+'/'+cap+', 실행대기 backlog '+actionable+')';bcol='var(--success)';}
+ else if(gated>0){bmsg='⚖️ 실행할 backlog 없음 — '+gated+'건이 human-gate (⚖️ 판단으로 풀어야 실행 후보가 됩니다)';bcol='var(--warning)';}
+ else{bmsg='유휴 — 실행할 backlog 없음. 다음 audit이 새 작업을 발굴합니다.';bcol='var(--muted)';}
  h+='<div style="margin-top:6px;font-size:12.5px;color:'+bcol+'">'+bmsg+'</div>';
  var hideDone=localStorage.getItem('hideDone')!=='0';
  var allIts=L.issues||[]; var its=hideDone?allIts.filter(function(w){return !isTerminal(w.state);}):allIts; var hidden=allIts.length-its.length;
  allIts.forEach(function(w){if(w.flag==='human-gate'||w.attention==='human-gate')gateInfo[w.id]={title:w.title||'',ask:(w.gate&&w.gate.ask)||'',url:w.url||''};});
- h+='<div class="sec">이슈 / 세션 <label style="float:right;font-weight:400;font-size:12px;cursor:pointer;color:#8b949e" title="완료(Done)·취소(Canceled)된 끝난 항목 숨기기"><input type="checkbox" onchange="toggleHideDone()"'+(hideDone?' checked':'')+'> 끝난 것 숨김'+(hidden>0?' ('+hidden+')':'')+'</label></div><div>'+(its.map(function(w){var gate=(w.flag==='human-gate'||w.attention==='human-gate')&&!w.gateResolved;return '<div class="card"><div class="l"><span class="'+(w.alive?'live':'dead')+'">'+(w.alive?'●':'○')+'</span><b>'+esc(w.id)+'</b><span class="chip '+scc(w.state)+'">'+esc(w.state)+'</span><span class="muted" style="max-width:280px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">'+esc(w.title||'')+'</span>'+(w.attention?'<span class="chip" style="color:#f85149;border-color:#f85149">'+(attLabel[w.attention]||'🔴')+'</span>':'')+(w.gateResolved?'<span class="chip" style="color:#3fb950;border-color:#3fb950">⚖️ 판단 완료</span>':'')+'</div><div class="row">'+(w.pr?'<a href="'+esc(w.pr)+'" target=_blank>PR↗</a>'+prChips(w):'')+(w.alive?chip('🔧 작업중','#58a6ff','워커 세션 진행 중'):'')+(w.url?'<a href="'+esc(w.url)+'" target=_blank>이슈↗</a>':'')+(w.alive&&w.workspace?'<button onclick="viewSession(\''+w.workspace+'\',\'🛠 '+w.id+'\')">내용보기</button>':'')+((w.alive||w.hasWorktree)?'<button onclick="ctl(\'open-issue\',{issue:\''+w.id+'\'})">cmux 열기▶</button>':'')+(w.alive&&w.workspace?'<button class="d" onclick="closeTab(\''+w.workspace+'\')">✕ 닫기</button>':'')+(gate&&!w.alive?'<button class="p" onclick="openGate(\''+w.id+'\')">⚖️ 판단</button>':'')+((w.state==='Backlog'&&!gate&&!w.gateResolved&&!w.alive&&!/run log/i.test(w.title||''))?'<button class="p" onclick="startIssue(\''+w.id+'\')">▶ 시작</button>':'')+'</div></div>';}).join('')||'<div class=muted>'+(hidden>0?'(끝난 항목 '+hidden+'건 숨김)':'이슈 없음 — ⚡run now')+'</div>')+'</div>';
+ h+='<div class="sec">이슈 / 세션 <label style="float:right;font-weight:400;font-size:12px;cursor:pointer;color:var(--muted)" title="완료(Done)·취소(Canceled)된 끝난 항목 숨기기"><input type="checkbox" onchange="toggleHideDone()"'+(hideDone?' checked':'')+'> 끝난 것 숨김'+(hidden>0?' ('+hidden+')':'')+'</label></div><div>'+(its.map(function(w){var gate=(w.flag==='human-gate'||w.attention==='human-gate')&&!w.gateResolved;return '<div class="card"><div class="l"><span class="'+(w.alive?'live':'dead')+'">'+(w.alive?'●':'○')+'</span><b>'+esc(w.id)+'</b><span class="chip '+scc(w.state)+'">'+esc(w.state)+'</span><span class="muted" style="max-width:280px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">'+esc(w.title||'')+'</span>'+(w.attention?'<span class="chip" style="color:var(--danger);border-color:var(--danger)">'+(attLabel[w.attention]||'🔴')+'</span>':'')+(w.gateResolved?'<span class="chip" style="color:var(--success);border-color:var(--success)">⚖️ 판단 완료</span>':'')+'</div><div class="row">'+(w.pr?'<a href="'+esc(w.pr)+'" target=_blank>PR↗</a>'+prChips(w):'')+(w.working?chip('🔧 작업중','var(--info)','워커가 구현 중 (아직 PR 없음)'):'')+(w.url?'<a href="'+esc(w.url)+'" target=_blank>이슈↗</a>':'')+(w.alive&&w.workspace?'<button onclick="viewSession(\''+w.workspace+'\',\'🛠 '+w.id+'\')">내용보기</button>':'')+((w.alive||w.hasWorktree)?'<button onclick="ctl(\'open-issue\',{issue:\''+w.id+'\'})">cmux 열기▶</button>':'')+(w.alive&&w.workspace?'<button class="d" onclick="closeTab(\''+w.workspace+'\')">✕ 닫기</button>':'')+(gate&&!w.alive?'<button class="p" onclick="openGate(\''+w.id+'\')">⚖️ 판단</button>':'')+((w.state==='Backlog'&&!gate&&!w.gateResolved&&!w.alive&&!/run log/i.test(w.title||''))?'<button class="p" onclick="startIssue(\''+w.id+'\')">▶ 시작</button>':'')+'</div></div>';}).join('')||'<div class=muted>'+(hidden>0?'(끝난 항목 '+hidden+'건 숨김)':'이슈 없음 — ⚡run now')+'</div>')+'</div>';
  h+='<div class="sec">활동 피드</div><div>'+((L.feed||[]).map(function(e){if(e.type==='cycle'&&e.event==='done')return '<div class="feedline fe-cycle">🔁 '+esc(e.audit||'-')+' · 발행 '+((e.filed||[]).length)+' · spawn '+(((e.spawned||[]).join(', '))||'-')+' <span class=t>'+rel(e.ts)+'</span></div>';if(e.type==='cycle')return '<div class="feedline fe-cycle muted">🔁 cycle 시작 <span class=t>'+rel(e.ts)+'</span></div>';if(e.type==='worker')return '<div class="feedline fe-worker">🛠 '+esc(e.issue)+' spawn <span class=t>'+rel(e.ts)+'</span></div>';return'';}).join('')||'<div class=muted>활동 없음</div>')+'</div>';
  document.getElementById('lbody').innerHTML=h;
 }
@@ -160,13 +223,13 @@ function chip(txt,col,tip){return ' <span class="chip" style="color:'+col+';bord
 function prChips(w){
  if(!w.pr)return'';
  if(w.merged)return ' <span class="live">✅ 머지됨</span>';
- if(w.prState==='CLOSED')return chip('✕ 닫힘','#f85149');
+ if(w.prState==='CLOSED')return chip('✕ 닫힘','var(--danger)');
  var s='',ci=w.ci;
- if(ci){if(ci.fail>0)s+=chip('❌ CI '+ci.fail,'#f85149','CI 실패 '+ci.fail+'개');else if(ci.pending>0)s+=chip('⏳ CI '+ci.pending,'#d29922','CI 진행중 '+ci.pending+'개');else if(ci.pass>0)s+=chip('✅ CI','#3fb950','CI 통과 '+ci.pass+'개');}
+ if(ci){if(ci.fail>0)s+=chip('❌ CI '+ci.fail,'var(--danger)','CI 실패 '+ci.fail+'개');else if(ci.pending>0)s+=chip('⏳ CI '+ci.pending,'var(--warning)','CI 진행중 '+ci.pending+'개');else if(ci.pass>0)s+=chip('✅ CI','var(--success)','CI 통과 '+ci.pass+'개');}
  var rd=w.review;
- if(rd==='APPROVED')s+=chip('✅ 승인','#3fb950');
- else if(rd==='CHANGES_REQUESTED')s+=chip('💬 변경요청','#f85149');
- else if(w.reviewCount>0)s+=chip('💬 리뷰 '+w.reviewCount,'#58a6ff','리뷰 '+w.reviewCount+'개'+(w.commentCount?', 코멘트 '+w.commentCount:''));
+ if(rd==='APPROVED')s+=chip('✅ 승인','var(--success)');
+ else if(rd==='CHANGES_REQUESTED')s+=chip('💬 변경요청','var(--danger)');
+ else if(w.reviewCount>0)s+=chip('💬 리뷰 '+w.reviewCount,'var(--info)','리뷰 '+w.reviewCount+'개'+(w.commentCount?', 코멘트 '+w.commentCount:''));
  else s+=' <span class="muted" style="font-size:11px">리뷰 대기</span>';
  return s;
 }
