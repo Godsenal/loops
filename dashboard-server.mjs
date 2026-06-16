@@ -19,6 +19,7 @@ const WORKTREE_BASE = ENV.WORKTREE_BASE || process.env.WORKTREE_BASE || `${proce
 const PORT = +(ENV.LOOPS_PORT || process.env.LOOPS_PORT || 8422);
 const GPID = `${GSTATE}/dispatcher.pid`;
 const GPAUSED = `${GSTATE}/PAUSED`;
+const GAWAKE = `${GSTATE}/awake.pid`;   // caffeinate 프로세스 pid (잠자기 방지 토글)
 
 const readText = (p) => { try { return readFileSync(p, 'utf8'); } catch { return ''; } };
 const readJSON = (p) => { try { return JSON.parse(readFileSync(p, 'utf8')); } catch { return null; } };
@@ -37,26 +38,44 @@ function globalDispatcher() {
   const t = readText(GPID).trim(); const pid = t ? +t : null; const running = pid ? pidAlive(pid) : false;
   return { running, paused: existsSync(GPAUSED), pid: running ? pid : null };
 }
+// caffeinate(잠자기 방지) 살아있는 pid 또는 null. detached로 떠서 대시보드 서버 재시작과 무관하게 유지된다.
+function awakeStatus() { const t = readText(GAWAKE).trim(); const pid = t ? +t : null; return pid && pidAlive(pid) ? pid : null; }
 function feedOf(st) { return readText(`${st}/runs.jsonl`).trim().split('\n').filter(Boolean).map(l => { try { return JSON.parse(l); } catch { return null; } }).filter(Boolean); }
 
-// PR 머지/상태 캐시 (gh, 60초마다 백그라운드 갱신 — status 요청을 막지 않음)
-const prCache = {};
+// PR 상태 캐시 — 이슈 브랜치(branchPrefix/slug)로 라이브 조회. 60초마다 백그라운드 갱신(status 요청을 막지 않음).
+// snapshot.json(orchestrator가 시간당 1회 기록)에 의존하지 않으므로, worker가 방금 연 PR·방금 닫힌/머지된 PR도 즉시 반영된다.
+// repo당 `gh pr list` 1회 → headRefName으로 우리 브랜치만 매칭. (PR URL은 gh가 돌려준 j.url만 신뢰 — origin이 mirror일 수 있음)
+const prByBranch = {};
+function branchOf(cfg, lid, id) { return `${cfg.branchPrefix || ('loop-' + lid)}/${slugOf(id)}`; }
+function prDataFromJson(j) {
+  const ch = j.statusCheckRollup || [];
+  const ciFail = ch.filter(c => ['FAILURE', 'ERROR', 'TIMED_OUT', 'CANCELLED', 'STARTUP_FAILURE'].includes(c.conclusion)).length;
+  const ciPend = ch.filter(c => c.status && c.status !== 'COMPLETED').length;
+  const ciPass = ch.filter(c => c.conclusion === 'SUCCESS').length;
+  const cs = ciFail ? 'fail' : (ciPend ? 'pending' : 'pass');
+  let att = null;
+  if (j.state === 'OPEN') { if (cs === 'fail') att = 'ci-failed'; else if (j.reviewDecision === 'APPROVED') att = 'merge-ready'; else if (j.reviewDecision === 'CHANGES_REQUESTED') att = 'changes'; }
+  else if (j.state === 'CLOSED' && !j.mergedAt) att = 'pr-closed';
+  return { url: j.url, merged: !!j.mergedAt, state: j.state, review: j.reviewDecision, checks: cs, ci: { pass: ciPass, fail: ciFail, pending: ciPend }, reviewCount: (j.reviews || []).length, commentCount: (j.comments || []).length, attention: att };
+}
 function refreshPRs() {
-  const urls = new Set();
-  for (const lid of listLoopIds()) { const snap = readJSON(`${LOOPS}/${lid}/state/snapshot.json`); (snap?.issues || []).forEach(i => { if (i.pr) urls.add(i.pr); }); }
-  for (const url of urls) {
-    execFile(GH, ['pr', 'view', url, '--json', 'state,mergedAt,reviewDecision,statusCheckRollup,reviews,comments'], { timeout: 9000 }, (e, so) => {
+  const byRepo = {};   // repo 경로 → 우리가 관심있는 브랜치 Set
+  for (const lid of listLoopIds()) {
+    const cfg = readJSON(cfgPath(lid)) || {}; const repo = cfg.repo; if (!repo) continue;
+    const snap = readJSON(`${LOOPS}/${lid}/state/snapshot.json`);
+    (byRepo[repo] ||= new Set());
+    (snap?.issues || []).forEach(i => byRepo[repo].add(branchOf(cfg, lid, i.id)));
+  }
+  for (const [repo, branches] of Object.entries(byRepo)) {
+    if (!branches.size) continue;
+    // ⚠️ reviews/comments 필드는 제외 — coderabbit 등이 다는 거대 코멘트 본문이 섞여 200건이면 응답이 수 MB → execFile 기본 maxBuffer(1MB) 초과로 통째 실패한다. reviewDecision으로 충분. maxBuffer도 여유있게.
+    execFile(GH, ['pr', 'list', '--state', 'all', '--limit', '200', '--json', 'url,state,mergedAt,headRefName,statusCheckRollup,reviewDecision'], { cwd: repo, timeout: 20000, maxBuffer: 32 * 1024 * 1024 }, (e, so) => {
       if (e) return; try {
-        const j = JSON.parse(so); const ch = j.statusCheckRollup || [];
-        const ciFail = ch.filter(c => ['FAILURE', 'ERROR', 'TIMED_OUT', 'CANCELLED', 'STARTUP_FAILURE'].includes(c.conclusion)).length;
-        const ciPend = ch.filter(c => c.status && c.status !== 'COMPLETED').length;
-        const ciPass = ch.filter(c => c.conclusion === 'SUCCESS').length;
-        const cs = ciFail ? 'fail' : (ciPend ? 'pending' : 'pass');
-        const reviewCount = (j.reviews || []).length, commentCount = (j.comments || []).length;
-        let att = null;
-        if (j.state === 'OPEN') { if (cs === 'fail') att = 'ci-failed'; else if (j.reviewDecision === 'APPROVED') att = 'merge-ready'; else if (j.reviewDecision === 'CHANGES_REQUESTED') att = 'changes'; }
-        else if (j.state === 'CLOSED' && !j.mergedAt) att = 'pr-closed';
-        prCache[url] = { merged: !!j.mergedAt, state: j.state, review: j.reviewDecision, checks: cs, ci: { pass: ciPass, fail: ciFail, pending: ciPend }, reviewCount, commentCount, attention: att };
+        const seen = new Set();   // gh는 최신순 → 브랜치별 첫(=최신) PR만 채택(reopen 대비)
+        for (const j of JSON.parse(so)) {
+          if (!branches.has(j.headRefName) || seen.has(j.headRefName)) continue;
+          seen.add(j.headRefName); prByBranch[j.headRefName] = prDataFromJson(j);
+        }
       } catch {}
     });
   }
@@ -67,11 +86,31 @@ function loopStatus(lid, allTabs) {
   const cfg = readJSON(`${dir}/config.json`) || {};
   const snap = readJSON(`${st}/snapshot.json`);
   const f = feedOf(st);
-  const order = { 'In Progress': 0, 'In Review': 1, 'Backlog': 2, 'Done': 3 };
+  const order = { 'In Progress': 0, 'In Review': 1, 'Backlog': 2, 'Done': 3, 'Canceled': 4 };
   const tabByIssue = {};
   for (const t of allTabs) { const m = (t.title || '').match(new RegExp('🛠\\s*' + lid + '\\s+(\\S+)')); if (m) tabByIssue[m[1].toUpperCase()] = t.ref; }
-  const issues = (snap?.issues || []).map(i => { const gateResolved = i.flag === 'human-gate' && existsSync(`${st}/decisions/${i.id}.md`); return ({ ...i, workspace: tabByIssue[i.id] || null, alive: !!tabByIssue[i.id], hasWorktree: existsSync(`${cfg.worktreePrefix || ''}-${slugOf(i.id)}`), merged: i.pr && prCache[i.pr] ? prCache[i.pr].merged : undefined, prState: i.pr && prCache[i.pr] ? prCache[i.pr].state : undefined, checks: i.pr && prCache[i.pr] ? prCache[i.pr].checks : undefined, ci: i.pr && prCache[i.pr] ? prCache[i.pr].ci : undefined, review: i.pr && prCache[i.pr] ? prCache[i.pr].review : undefined, reviewCount: i.pr && prCache[i.pr] ? prCache[i.pr].reviewCount : undefined, commentCount: i.pr && prCache[i.pr] ? prCache[i.pr].commentCount : undefined, gateResolved, attention: (i.pr && prCache[i.pr] ? prCache[i.pr].attention : null) || (i.flag === 'human-gate' && !gateResolved ? 'human-gate' : null) }); })
-    .sort((a, b) => (order[a.state] ?? 9) - (order[b.state] ?? 9));
+  const issues = (snap?.issues || []).map(i => {
+    const live = prByBranch[branchOf(cfg, lid, i.id)] || null;
+    const ws = tabByIssue[i.id] || null, alive = !!ws;
+    const gateResolved = i.flag === 'human-gate' && existsSync(`${st}/decisions/${i.id}.md`);
+    // 표시 상태 = 라이브 신호(PR + 탭) 우선. snapshot은 시간당 1회라 뒤처지므로 보조로만.
+    let state = i.state, working = false;
+    if (live && live.merged) state = 'Done';
+    else if (live && live.state === 'OPEN') state = 'In Review';
+    else if (live && live.state === 'CLOSED') state = (i.state === 'Done' || i.state === 'Canceled') ? i.state : 'In Review';  // 닫힘=정리 대상 → In Review 버킷 + pr-closed 플래그로 표시
+    else if (!live && alive && i.state !== 'Done' && i.state !== 'Canceled') { state = 'In Progress'; working = true; }  // PR 아직 없고 탭 살아있음 = 진짜 작업중
+    return {
+      ...i, state, snapState: i.state, pr: (live && live.url) || i.pr || null,
+      workspace: ws, alive, working, hasWorktree: existsSync(`${cfg.worktreePrefix || ''}-${slugOf(i.id)}`),
+      merged: live ? live.merged : undefined, prState: live ? live.state : undefined, checks: live ? live.checks : undefined,
+      ci: live ? live.ci : undefined, review: live ? live.review : undefined, reviewCount: live ? live.reviewCount : undefined,
+      commentCount: live ? live.commentCount : undefined, gateResolved,
+      attention: (live ? live.attention : null) || (i.flag === 'human-gate' && !gateResolved ? 'human-gate' : null),
+    };
+  }).sort((a, b) => (order[a.state] ?? 9) - (order[b.state] ?? 9));
+  // counts는 파생 상태로 재계산 → 사이드바/카운트가 카드와 일치 (snap.counts는 시간당 1회라 뒤처짐).
+  const counts = { Backlog: 0, 'In Progress': 0, 'In Review': 0, Done: 0, Canceled: 0 };
+  for (const i of issues) if (counts[i.state] != null) counts[i.state]++;
   const nextFile = readText(`${st}/next_fire`).trim();
   const gd = globalDispatcher();
   const nextTs = (gd.running && !existsSync(`${st}/PAUSED`) && cfg.enabled !== false && nextFile) ? +nextFile : null;
@@ -79,16 +118,17 @@ function loopStatus(lid, allTabs) {
     id: lid, name: cfg.name || lid, emoji: cfg.emoji || '🔁', enabled: cfg.enabled !== false,
     repo: cfg.repo || '', linearProjectUrl: cfg.linearProjectUrl || '', maxWorkers: cfg.maxWorkers || 2,
     schedule: cfg.schedule || { intervalSec: 3600, startAt: null }, paused: existsSync(`${st}/PAUSED`),
-    nextTs, counts: snap?.counts || null, issues, feed: f.slice(-40).reverse(),
+    nextTs, counts, issues, feed: f.slice(-40).reverse(),
     attentionCount: issues.filter(i => i.attention).length,
-    mergedInReview: issues.filter(i => i.state === 'In Review' && i.merged).length,
-    closedInReview: issues.filter(i => i.state === 'In Review' && i.prState === 'CLOSED' && !i.merged).length,
+    // "정리 필요" = Linear(snapshot)는 아직 In Review인데 PR은 이미 머지/닫힘 → reconcile 유도
+    mergedInReview: issues.filter(i => i.snapState === 'In Review' && i.merged).length,
+    closedInReview: issues.filter(i => i.snapState === 'In Review' && i.prState === 'CLOSED' && !i.merged).length,
     orchRunning: existsSync(`/tmp/loop-${lid}.lockdir`),
   };
 }
 function status() {
   const allTabs = tabsAll();
-  return { now: Math.floor(Date.now() / 1000), dispatcher: globalDispatcher(), loops: listLoopIds().map(l => loopStatus(l, allTabs)) };
+  return { now: Math.floor(Date.now() / 1000), dispatcher: globalDispatcher(), awake: !!awakeStatus(), loops: listLoopIds().map(l => loopStatus(l, allTabs)) };
 }
 
 function sh(cmd, args) { return new Promise(r => execFile(cmd, args, { timeout: 12000 }, (e, so, se) => r({ ok: !e, out: (so || '') + (se || '') }))); }
@@ -110,6 +150,19 @@ async function control(a, p) {
     case 'stop': { const pid = globalDispatcher().pid; if (pid) { try { process.kill(pid, 'SIGTERM'); } catch {} setTimeout(() => { try { if (pidAlive(pid)) process.kill(pid, 'SIGKILL'); } catch {} }, 1500); } execFile('/usr/bin/pkill', ['-f', `${ROOT}/bin/dispatch.sh`], () => {}); return { ok: true, out: 'stopped' }; }
     case 'pause': return sh('/usr/bin/touch', [GPAUSED]);
     case 'resume': return sh('/bin/rm', ['-f', GPAUSED]);
+    case 'awake-on': {
+      if (awakeStatus()) return { ok: true, out: '이미 잠자기 방지 중' };
+      // caffeinate -i: idle 시스템 슬립 차단. detached+unref → 요청/서버 재시작과 무관하게 살아있고, awake-off에서 kill.
+      const c = spawn('/usr/bin/caffeinate', ['-i'], { stdio: 'ignore', detached: true }); c.unref();
+      if (!c.pid) return { ok: false, out: 'caffeinate 실행 실패' };
+      try { writeFileSync(GAWAKE, String(c.pid)); } catch (e) { return { ok: false, out: '' + e }; }
+      return { ok: true, out: '☕ 잠자기 방지 ON (idle 슬립 차단 — 뚜껑 닫기 잠자기는 막지 못함)' };
+    }
+    case 'awake-off': {
+      const pid = awakeStatus(); if (pid) { try { process.kill(pid, 'SIGTERM'); } catch {} }
+      execFile('/bin/rm', ['-f', GAWAKE], () => {});
+      return { ok: true, out: '잠자기 방지 OFF' };
+    }
     case 'run-now': { if (!lid) return { ok: false, out: 'no loop' }; if (existsSync(`/tmp/loop-${lid}.lockdir`)) return { ok: false, out: '⏳ 이미 orchestrator 실행 중입니다 — 끝난 뒤 다시 누르세요 (버튼이 "실행 중·로그"로 바뀌면 끝난 겁니다).' }; spawn(`${ROOT}/bin/spawn-orchestrator.sh`, [lid], { stdio: 'ignore' }); return { ok: true, out: lid + ' 사이클 발사' }; }
     case 'reconcile': { if (!lid) return { ok: false, out: 'no loop' }; if (existsSync(`/tmp/loop-${lid}.lockdir`)) return { ok: false, out: '⏳ orchestrator 실행 중이라 지금은 못 합니다. 현재 run이 끝나면 다음 run이 머지/닫힘 PR을 자동 정리합니다 (급하면 끝난 뒤 다시 누르세요).' }; spawn(`${ROOT}/bin/spawn-orchestrator.sh`, [lid, 'reconcile'], { stdio: 'ignore' }); return { ok: true, out: lid + ' PR 정리 중… (머지→Done, 닫힘→Canceled, ~1분)' }; }
     case 'resolve-gate': {
