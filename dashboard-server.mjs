@@ -142,7 +142,9 @@ async function control(a, p) {
   const lid = p.loop;
   switch (a) {
     case 'start': {
-      if (globalDispatcher().running) return { ok: true, out: 'already running' };
+      // ▶ = "켜기": 이미 running이면 PAUSED를 해제(=resume)한다. running+paused일 때 ▶가 no-op으로 보이던 함정 제거.
+      const gd = globalDispatcher();
+      if (gd.running) { if (gd.paused) { await sh('/bin/rm', ['-f', GPAUSED]); return { ok: true, out: 'resumed (paused 해제)' }; } return { ok: true, out: 'already running' }; }
       const r = await sh(CMUX, ['new-workspace', '--cwd', ROOT, '--command', `${ROOT}/bin/dispatch.sh`]);
       const m = (r.out || '').match(/workspace:\d+/); if (m) { await sh(CMUX, ['rename-workspace', '--workspace', m[0], '🔁 loops dispatcher']); reorderBottom(m[0]); }
       return r;
