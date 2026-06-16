@@ -127,7 +127,7 @@ h1{letter-spacing:-.3px}
  <div class="sec" style="border-top:1px solid var(--border);padding-top:12px;margin-top:14px"><button class="d" onclick="delLoop()">🗑 이 loop 삭제</button> <span class="muted">config/mission/state만 제거 (worktree·Linear·PR 보존)</span></div>
 </div></div></div>
 <script>
-var sel=localStorage.getItem('loop')||null, renderedLoop=null, sRef=null, sLoop=null, sTimer=null, lastData=null;
+var sel=localStorage.getItem('loop')||null, renderedLoop=null, sRef=null, sLoop=null, sDispatcher=false, sTimer=null, lastData=null;
 function applyTheme(t){document.documentElement.dataset.theme=t;var b=document.getElementById('themebtn');if(b)b.textContent=t==='light'?'☀️':'🌙';}
 function toggleTheme(){var t=(localStorage.getItem('theme')||'dark')==='light'?'dark':'light';localStorage.setItem('theme',t);applyTheme(t);}
 applyTheme(localStorage.getItem('theme')||'dark');
@@ -138,11 +138,12 @@ function scc(s){return 's-'+String(s||'').replace(/\s/g,'');}
 function ctl(a,ex){return fetch('/api/control',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify(Object.assign({action:a,loop:sel},ex||{}))}).then(function(r){return r.json();}).then(function(j){if(j&&j.ok===false&&j.out)alert(j.out);setTimeout(load,300);return j;});}
 function selectLoop(id){sel=id;localStorage.setItem('loop',id);renderedLoop=null;load();}
 function selectAttention(){var L=(lastData&&lastData.loops||[]).find(function(x){return (x.attentionCount||0)>0;});if(L)selectLoop(L.id);}
-function viewSession(ref,label){sRef=ref;sLoop=null;document.getElementById('stitle').textContent=label;showS();}
-function viewLog(loop){sRef=null;sLoop=loop;document.getElementById('stitle').textContent=loop+' orchestrator 로그';showS();}
+function viewSession(ref,label){sRef=ref;sLoop=null;sDispatcher=false;document.getElementById('stitle').textContent=label;showS();}
+function viewLog(loop){sRef=null;sLoop=loop;sDispatcher=false;document.getElementById('stitle').textContent=loop+' orchestrator 로그';showS();}
+function viewDispatcherLog(){sRef=null;sLoop=null;sDispatcher=true;document.getElementById('stitle').textContent='📋 dispatcher 로그';showS();}
 function showS(){document.getElementById('smodal').style.display='block';refS();if(sTimer)clearInterval(sTimer);sTimer=setInterval(refS,2500);}
-function closeS(){document.getElementById('smodal').style.display='none';if(sTimer)clearInterval(sTimer);}
-function refS(){var q=sRef?('ref='+encodeURIComponent(sRef)):('loop='+encodeURIComponent(sLoop));fetch('/api/session?'+q).then(function(r){return r.text();}).then(function(t){document.getElementById('sbody').textContent=t;});}
+function closeS(){document.getElementById('smodal').style.display='none';sDispatcher=false;if(sTimer)clearInterval(sTimer);}
+function refS(){var q=sDispatcher?'dispatcher=1':(sRef?('ref='+encodeURIComponent(sRef)):('loop='+encodeURIComponent(sLoop)));fetch('/api/session?'+q).then(function(r){return r.text();}).then(function(t){document.getElementById('sbody').textContent=t;});}
 function openCreate(){document.getElementById('cmodal').style.display='block';setTimeout(function(){var e=document.getElementById('c_desc');if(e)e.focus();},50);}
 function buildLoop(){var d=document.getElementById('c_desc').value.trim();if(!d){alert('만들고 싶은 루프를 한 줄로 설명하세요');return;}fetch('/api/control',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({action:'build-loop',description:d})}).then(function(r){return r.json();}).then(function(j){alert(j.out||'');closeC();});}
 function closeC(){document.getElementById('cmodal').style.display='none';}
@@ -171,7 +172,7 @@ function render(d){
  var attn=d.loops.reduce(function(s,L){return s+(L.attentionCount||0);},0);
  document.getElementById('attnsum').innerHTML=attn>0?'<span class="attn" onclick="selectAttention()" title="개입 필요한 첫 loop로 이동">🔴 '+attn+'건 개입 필요</span>':'<span class="clean">✓ clean</span>';
  var gd=d.dispatcher;
- document.getElementById('gctl').innerHTML='<span class="dot '+(gd.running?(gd.paused?'pause':'on'):'off')+'"></span>'+(gd.running?(gd.paused?'paused':'running'):'stopped')+' <button class="p" onclick="ctl(\'start\')">▶</button><button onclick="ctl(\'pause\')">⏸</button><button onclick="ctl(\'resume\')">▶▶</button><button class="d" onclick="ctl(\'stop\')">⏹</button>'+'<button class="'+(d.awake?'p':'')+'" title="ON이면 caffeinate로 idle 잠자기를 막아 맥이 깨어있고 디스패처가 계속 돕니다. ⚠️ 노트북 뚜껑을 닫는 잠자기는 막지 못합니다(전원 연결+뚜껑 열어두기 권장). 맥이 꺼지면 당연히 안 돕니다." onclick="ctl(\''+(d.awake?'awake-off':'awake-on')+'\')">'+(d.awake?'☕ 안잠(ON)':'💤 잠자기방지 OFF')+'</button>';
+ document.getElementById('gctl').innerHTML='<span class="dot '+(gd.running?(gd.paused?'pause':'on'):'off')+'"></span>'+(gd.running?(gd.paused?'paused':'running'):'stopped')+' <button class="p" onclick="ctl(\'start\')">▶</button><button onclick="ctl(\'pause\')">⏸</button><button onclick="ctl(\'resume\')">▶▶</button><button class="d" onclick="ctl(\'stop\')">⏹</button> <button onclick="viewDispatcherLog()" title="디스패처 스케줄링/발사 로그 (state/dispatcher.log)">📋 dispatcher 로그</button>'+'<button class="'+(d.awake?'p':'')+'" title="ON이면 caffeinate로 idle 잠자기를 막아 맥이 깨어있고 디스패처가 계속 돕니다. ⚠️ 노트북 뚜껑을 닫는 잠자기는 막지 못합니다(전원 연결+뚜껑 열어두기 권장). 맥이 꺼지면 당연히 안 돕니다." onclick="ctl(\''+(d.awake?'awake-off':'awake-on')+'\')">'+(d.awake?'☕ 안잠(ON)':'💤 잠자기방지 OFF')+'</button>';
  var L=d.loops.find(function(x){return x.id===sel;});
  if(!L){document.getElementById('main').innerHTML='<div class="muted" style="padding:40px">왼쪽에서 loop를 선택하세요.</div>';renderedLoop=null;return;}
  if(renderedLoop!==L.id){renderedLoop=L.id;document.getElementById('main').innerHTML='<div id="lbody"></div>';}
