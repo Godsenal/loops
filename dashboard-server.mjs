@@ -262,8 +262,21 @@ function sessionText(u) {
 }
 function promptText(u) { const lid = u.searchParams.get('loop'); if (!lid) return ''; return readText(`${LOOPS}/${lid}/mission.md`); }
 
+// 원격 노출 인증 게이트: 프록시(터널) 경유 요청에만 Basic auth 요구. 로컬 직접(127.0.0.1, XFF 없음)은 무인증이라 cmux 패널 사용은 그대로.
+// LOOPS_REMOTE_AUTH="user:pass" (loops.env). 미설정이면 게이트 비활성 = 로컬 전용 기본 동작 유지.
+const REMOTE_AUTH = ENV.LOOPS_REMOTE_AUTH || process.env.LOOPS_REMOTE_AUTH || '';
+function viaProxy(req) { return !!(req.headers['x-forwarded-for'] || req.headers['cf-connecting-ip'] || req.headers['x-forwarded-host']); }
+function authOK(req) {
+  if (!REMOTE_AUTH) return true;     // 토큰 미설정 → 게이트 없음
+  if (!viaProxy(req)) return true;   // 로컬 직접 접속 → 신뢰 (터널은 항상 XFF를 붙임)
+  const m = /^Basic (.+)$/.exec(req.headers.authorization || '');
+  if (!m) return false;
+  try { return Buffer.from(m[1], 'base64').toString() === REMOTE_AUTH; } catch { return false; }
+}
+
 const server = http.createServer((req, res) => {
   const u = new URL(req.url, 'http://localhost');
+  if (!authOK(req)) { res.writeHead(401, { 'WWW-Authenticate': 'Basic realm="loops dashboard"', 'content-type': 'text/plain; charset=utf-8' }); res.end('인증 필요'); return; }
   // HTML은 요청마다 fresh 읽기 → dashboard.html 편집 시 새로고침만 하면 즉시 반영 (서버 재시작 불필요)
   if (req.method === 'GET' && u.pathname === '/') { res.writeHead(200, { 'content-type': 'text/html; charset=utf-8' }); res.end(readText(`${ROOT}/dashboard.html`) || '<h1>dashboard.html 없음</h1>'); return; }
   if (req.method === 'GET' && u.pathname === '/api/status') { res.writeHead(200, { 'content-type': 'application/json' }); res.end(JSON.stringify(status())); return; }
