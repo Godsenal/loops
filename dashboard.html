@@ -202,7 +202,9 @@ function render(d){
 }
 function renderBody(d,L){
  var c=L.counts||{};
- var h='<div class="row" style="justify-content:space-between"><h1 style="margin:0;font-size:18px">'+L.emoji+' '+esc(L.name)+'</h1><div class="row">'
+ var lr=L.lastRun;
+ var banner=(lr&&lr.exit!==0)?'<div onclick="viewLog(\''+L.id+'\')" title="클릭하면 orchestrator 로그" style="cursor:pointer;background:var(--danger);color:#fff;padding:8px 12px;border-radius:6px;margin-bottom:10px;font-size:13px;font-weight:600">⚠️ 직전 orchestrator run 실패 (exit '+lr.exit+')'+(lr.ts?' · '+rel(lr.ts):'')+' — orch 로그 보기 ↗</div>':'';
+ var h=banner+'<div class="row" style="justify-content:space-between"><h1 style="margin:0;font-size:18px">'+L.emoji+' '+esc(L.name)+'</h1><div class="row">'
   +(L.orchRunning?'<button onclick="viewLog(\''+L.id+'\')" title="orchestrator 실행 중 — 클릭하면 라이브 로그"><span class="spin">⏳</span> 실행 중 · 로그</button>':'<button onclick="runNow()">⚡ run now</button>')
   +((L.mergedInReview>0||L.closedInReview>0)?'<button class="p" onclick="reconcile(\''+L.id+'\','+(L.mergedInReview+(L.closedInReview||0))+')">🧹 PR 정리 '+(L.mergedInReview+(L.closedInReview||0))+'건</button>':'')
   +'<button onclick="ctl(\''+(L.paused?'loop-resume':'loop-pause')+'\')">'+(L.paused?'▶ 재개':'⏸ 일시정지')+'</button>'
