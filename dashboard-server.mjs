@@ -114,6 +114,8 @@ function loopStatus(lid, allTabs) {
   // counts는 파생 상태로 재계산 → 사이드바/카운트가 카드와 일치 (snap.counts는 시간당 1회라 뒤처짐).
   const counts = { Backlog: 0, 'In Progress': 0, 'In Review': 0, Done: 0, Canceled: 0 };
   for (const i of issues) if (counts[i.state] != null) counts[i.state]++;
+  const lastExit = readText(`${st}/.last_run_exit`).trim();
+  const lastRun = lastExit !== '' ? { exit: +lastExit, ts: +readText(`${st}/.last_run_done`).trim() || null } : null;
   const nextFile = readText(`${st}/next_fire`).trim();
   const gd = globalDispatcher();
   const nextTs = (gd.running && !existsSync(`${st}/PAUSED`) && cfg.enabled !== false && nextFile) ? +nextFile : null;
@@ -121,7 +123,7 @@ function loopStatus(lid, allTabs) {
     id: lid, name: cfg.name || lid, emoji: cfg.emoji || '🔁', enabled: cfg.enabled !== false,
     repo: cfg.repo || '', linearProjectUrl: cfg.linearProjectUrl || '', maxWorkers: cfg.maxWorkers || 2,
     schedule: cfg.schedule || { intervalSec: 3600, startAt: null }, paused: existsSync(`${st}/PAUSED`),
-    nextTs, counts, issues, feed: f.slice(-40).reverse(),
+    nextTs, lastRun, counts, issues, feed: f.slice(-40).reverse(),
     attentionCount: issues.filter(i => i.attention).length,
     // "정리 필요" = Linear(snapshot)는 아직 In Review인데 PR은 이미 머지/닫힘 → reconcile 유도
     mergedInReview: issues.filter(i => i.snapState === 'In Review' && i.merged).length,

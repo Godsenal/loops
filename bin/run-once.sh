@@ -30,4 +30,5 @@ echo "[$(date '+%F %T')] ===== $LOOP orchestrator start (mode=$LOOP_MODE) ====="
 ( cd "$ORCHWT" && claude -p "$PROMPT" --dangerously-skip-permissions ) >> "$STATE/run.log" 2>&1
 code=$?
 echo "[$(date '+%F %T')] ===== $LOOP orchestrator end (exit $code) =====" >> "$STATE/run.log"
+echo "$code" > "$STATE/.last_run_exit"   # 최신 run의 exit (성공 run이 0으로 덮어 배너 자동해제)
 date '+%s' > "$STATE/.last_run_done"
