@@ -11,3 +11,8 @@ export CMUX_BIN="${CMUX_BIN:-$(command -v cmux 2>/dev/null)}"
 export GH_BIN="${GH_BIN:-$(command -v gh 2>/dev/null)}"
 export WORKTREE_BASE="${WORKTREE_BASE:-$HOME/LTH}"
 export DEFAULT_REPO="${DEFAULT_REPO:-}"
+
+# config.json의 dot-path 값을 읽는 단일 헬퍼. usage: cfgval <file> <dotpath>
+# 부재/null/undefined → "" , 그 외 stringify(0→"0", false→"false"). stderr는 묻지 않음(loud).
+# stderr를 묻고 싶은 호출자는 `cfgval ... 2>/dev/null` 로 감싼다(예: dispatch.sh의 field).
+cfgval(){ node -e 'const c=JSON.parse(require("fs").readFileSync(process.argv[1]));const v=process.argv[2].split(".").reduce((o,p)=>o&&o[p],c);process.stdout.write(v==null?"":String(v))' "$1" "$2"; }

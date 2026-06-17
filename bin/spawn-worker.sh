@@ -8,9 +8,8 @@ ID="${2:?usage: spawn-worker.sh <loop-id> <issue-id>}"
 ROOT="$LOOPS_HOME"; LOOPDIR=$ROOT/loops/$LOOP; STATE=$LOOPDIR/state; CFG=$LOOPDIR/config.json
 CMUX="$CMUX_BIN"
 RUNNER=$ROOT/bin/worker-run.sh
-cfgval(){ node -e 'const c=JSON.parse(require("fs").readFileSync(process.argv[1]));const v=process.argv[2].split(".").reduce((o,p)=>o&&o[p],c);process.stdout.write(v==null?"":String(v))' "$CFG" "$1"; }
-REPO="$(cfgval repo)"; BASEREF="$(cfgval baseRef)"; [[ -z "$BASEREF" ]] && BASEREF=origin/develop
-PREFIX="$(cfgval worktreePrefix)"; BRPFX="$(cfgval branchPrefix)"; [[ -z "$BRPFX" ]] && BRPFX="loop-$LOOP"
+REPO="$(cfgval "$CFG" repo)"; BASEREF="$(cfgval "$CFG" baseRef)"; [[ -z "$BASEREF" ]] && BASEREF=origin/develop
+PREFIX="$(cfgval "$CFG" worktreePrefix)"; BRPFX="$(cfgval "$CFG" branchPrefix)"; [[ -z "$BRPFX" ]] && BRPFX="loop-$LOOP"
 
 slug="$(echo "$ID" | tr '[:upper:]' '[:lower:]' | tr -c 'a-z0-9' '-' | sed 's/-*$//')"
 WT="${PREFIX}-${slug}"; BR="${BRPFX}/${slug}"
