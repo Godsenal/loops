@@ -121,6 +121,9 @@ h1{letter-spacing:-.3px}
  <div class="row"><span class="muted">시작</span> <input id="startAt" type="time"> <span class="muted">인터벌</span> <input id="ivMin" type="number" min="1" style="width:80px"> 분 <button class="p" onclick="setSched()">적용</button> <span id="schedinfo" class="muted"></span></div>
  <div class="sec">📝 mission (메인 프롬프트) <button class="p" onclick="saveMission()" style="float:right">저장 ⌘S</button></div>
  <textarea id="missionbox" style="height:200px"></textarea>
+ <div class="sec">🔗 Linear API 키 <span class="muted" style="font-size:11px;font-weight:400">(전역 · 🗑버리기 기능용)</span><span id="linkeystat" class="muted" style="float:right;font-size:12px"></span></div>
+ <div class="row"><input id="linearkeybox" type="password" placeholder="lin_api_… 붙여넣기" style="flex:1;width:auto;font-family:ui-monospace,monospace"> <button class="p" onclick="saveLinearKey()">저장</button></div>
+ <div class="muted" style="font-size:11px;margin-top:4px">Linear → Settings → Security &amp; access → Personal API keys. 저장 즉시 적용(재시작 불필요), loops.env(gitignore)에 보관 · 값은 다시 표시 안 함.</div>
  <div class="sec">⚙️ config <button class="p" onclick="saveConfig()" style="float:right">저장</button></div>
  <div id="cfgform"></div>
  <details style="margin-top:10px"><summary class="muted" style="cursor:pointer;font-size:12px">고급 — raw JSON 직접 편집 (위 폼에 없는 필드까지)</summary><textarea id="cfgbox" style="height:200px;margin-top:8px"></textarea><div><button onclick="saveConfigRaw()" style="margin-top:6px">raw JSON 저장</button></div></details>
@@ -164,6 +167,7 @@ function submitGate(){var d=document.getElementById('g_decision').value.trim();i
 function setSched(){ctl('set-schedule',{startAt:document.getElementById('startAt').value,intervalMin:document.getElementById('ivMin').value}).then(function(j){if(j&&j.ok)flash('스케줄 적용됨');});}
 function saveMission(){ctl('save-mission',{content:document.getElementById('missionbox').value}).then(function(j){if(j&&j.ok)flash('mission 저장됨');});}
 function saveConfig(){var o={};CFG_FIELDS.forEach(function(f){var el=document.getElementById('cf_'+f.k);if(!el)return;var v=el.value;if(f.type==='number')v=+v;o[f.k]=v;});ctl('save-config',o).then(function(j){if(j&&j.ok)flash('config 저장됨');else if(j&&j.out)alert(j.out);});}
+function saveLinearKey(){var v=document.getElementById('linearkeybox').value.trim();if(!v){alert('Linear 키를 붙여넣으세요');return;}ctl('set-linear-key',{key:v}).then(function(j){if(j&&j.ok){document.getElementById('linearkeybox').value='';flash('Linear 키 저장됨');var s=document.getElementById('linkeystat');if(s)s.textContent='✓ 설정됨';}else if(j&&j.out)alert(j.out);});}
 function delLoop(){if(!confirm(sel+' loop 삭제? config/mission/state 제거 (worktree·Linear·PR은 보존)'))return;ctl('delete-loop').then(function(){closeO();localStorage.removeItem('loop');sel=null;renderedLoop=null;load();});}
 
 function render(d){
@@ -209,6 +213,7 @@ function renderBody(d,L){
 }
 function openSettings(){var L=lastData&&lastData.loops.find(function(x){return x.id===sel;});if(!L)return;
  document.getElementById('otitle').textContent='⚙️ '+esc(L.name||sel)+' 설정';
+ document.getElementById('linearkeybox').value='';document.getElementById('linkeystat').textContent=(lastData&&lastData.linearKey)?'✓ 설정됨':'⚠️ 미설정';
  document.getElementById('startAt').value=L.schedule.startAt||'';
  document.getElementById('ivMin').value=Math.round((L.schedule.intervalSec||3600)/60);
  document.getElementById('schedinfo').textContent=L.nextTs?('다음 발사 '+rel(L.nextTs)):(L.enabled?'':'(loop 꺼짐)');

@@ -26,6 +26,8 @@ const readText = (p) => { try { return readFileSync(p, 'utf8'); } catch { return
 const readJSON = (p) => { try { return JSON.parse(readFileSync(p, 'utf8')); } catch { return null; } };
 const pidAlive = (pid) => { try { process.kill(pid, 0); return true; } catch { return false; } };
 const slugOf = (id) => String(id).toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/-+$/, '');
+let LINEAR_KEY = ENV.LINEAR_API_KEY || process.env.LINEAR_API_KEY || '';   // 런타임 보유 — UI에서 즉시 갱신, loops.env에 영속화. status는 boolean만 노출.
+function setEnvVar(k, v) { const p = `${ROOT}/loops.env`; let t = readText(p); const ln = `${k}=${v}`; const re = new RegExp('^' + k + '=.*$', 'm'); t = re.test(t) ? t.replace(re, ln) : (t.replace(/\n?$/, '\n') + ln + '\n'); writeFileSync(p, t); }
 
 function listLoopIds() { try { return readdirSync(LOOPS).filter(d => existsSync(`${LOOPS}/${d}/config.json`)); } catch { return []; } }
 function tabsAll() {
@@ -129,7 +131,7 @@ function loopStatus(lid, allTabs) {
 }
 function status() {
   const allTabs = tabsAll();
-  return { now: Math.floor(Date.now() / 1000), dispatcher: globalDispatcher(), awake: !!awakeStatus(), loops: listLoopIds().map(l => loopStatus(l, allTabs)) };
+  return { now: Math.floor(Date.now() / 1000), dispatcher: globalDispatcher(), awake: !!awakeStatus(), linearKey: !!LINEAR_KEY, loops: listLoopIds().map(l => loopStatus(l, allTabs)) };
 }
 
 function sh(cmd, args) { return new Promise(r => execFile(cmd, args, { timeout: 12000 }, (e, so, se) => r({ ok: !e, out: (so || '') + (se || '') }))); }
@@ -142,8 +144,8 @@ function clearNextFire(lid) { try { execFile('/bin/rm', ['-f', `${LOOPS}/${lid}/
 // Linear GraphQL (Node 내장 https, 의존성 0). LINEAR_API_KEY=loops.env. 이슈 버리기(→Canceled)용.
 function linearGQL(query, variables) {
   return new Promise((resolve, reject) => {
-    const key = ENV.LINEAR_API_KEY || process.env.LINEAR_API_KEY;
-    if (!key) return reject(new Error('LINEAR_API_KEY 없음 — loops.env에 추가 후 대시보드 재시작'));
+    const key = LINEAR_KEY;
+    if (!key) return reject(new Error('LINEAR_API_KEY 없음 — 설정 ⚙️ 에서 Linear 키를 입력하세요'));
     const body = JSON.stringify({ query, variables });
     const req = https.request('https://api.linear.app/graphql', { method: 'POST', headers: { 'content-type': 'application/json', authorization: key, 'content-length': Buffer.byteLength(body) }, timeout: 15000 }, (res) => {
       let d = ''; res.on('data', c => d += c); res.on('end', () => { try { const j = JSON.parse(d); if (j.errors) return reject(new Error(j.errors.map(e => e.message).join('; '))); resolve(j.data); } catch (e) { reject(e); } });
@@ -234,6 +236,13 @@ async function control(a, p) {
       try { const sp = `${LOOPS}/${lid}/state/snapshot.json`; const snap = readJSON(sp); if (snap && Array.isArray(snap.issues)) { const it = snap.issues.find(x => x.id === p.issue); if (it) { it.state = 'Canceled'; writeFileSync(sp, JSON.stringify(snap, null, 2)); } } } catch {}
       if (p.workspace) { try { await sh(CMUX, ['close-workspace', '--workspace', p.workspace]); } catch {} }
       return { ok: true, out: p.issue + ' → Canceled (보드에서 숨김)' };
+    }
+    case 'set-linear-key': {   // UI에서 Linear 개인키 입력 → 런타임 즉시 적용 + loops.env 영속화 (값은 어디에도 되돌려주지 않음)
+      const key = (p.key || '').trim();
+      if (!key) return { ok: false, out: '키가 비었음' };
+      LINEAR_KEY = key;
+      try { setEnvVar('LINEAR_API_KEY', key); } catch (e) { return { ok: false, out: 'loops.env 저장 실패: ' + e.message }; }
+      return { ok: true, out: 'Linear 키 저장됨 (즉시 적용 · 재시작 불필요)' };
     }
     case 'save-mission': { if (!lid) return { ok: false }; try { writeFileSync(`${LOOPS}/${lid}/mission.md`, p.content || ''); return { ok: true, out: 'mission 저장' }; } catch (e) { return { ok: false, out: '' + e }; } }
     case 'save-config': {
