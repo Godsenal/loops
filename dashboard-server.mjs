@@ -2,6 +2,7 @@
 // Loops 플랫폼 대시보드 — 멀티 루프 관리 UI + 제어. 의존성 0 (Node 내장 http).
 // ⚠️ cmux 패널 안에서 실행해야 함(제어가 cmux 소켓 접근). loopctl dashboard 로 띄움.
 import http from 'node:http';
+import https from 'node:https';
 import { readFileSync, writeFileSync, existsSync, readdirSync, mkdirSync } from 'node:fs';
 import { execFile, execFileSync, spawn } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
@@ -138,6 +139,20 @@ function cfgPath(lid) { return `${LOOPS}/${lid}/config.json`; }
 function worktreeOf(lid, id) { const cfg = readJSON(cfgPath(lid)) || {}; return `${cfg.worktreePrefix || ''}-${slugOf(id)}`; }
 function clearNextFire(lid) { try { execFile('/bin/rm', ['-f', `${LOOPS}/${lid}/state/next_fire`], () => {}); } catch {} }
 
+// Linear GraphQL (Node 내장 https, 의존성 0). LINEAR_API_KEY=loops.env. 이슈 버리기(→Canceled)용.
+function linearGQL(query, variables) {
+  return new Promise((resolve, reject) => {
+    const key = ENV.LINEAR_API_KEY || process.env.LINEAR_API_KEY;
+    if (!key) return reject(new Error('LINEAR_API_KEY 없음 — loops.env에 추가 후 대시보드 재시작'));
+    const body = JSON.stringify({ query, variables });
+    const req = https.request('https://api.linear.app/graphql', { method: 'POST', headers: { 'content-type': 'application/json', authorization: key, 'content-length': Buffer.byteLength(body) }, timeout: 15000 }, (res) => {
+      let d = ''; res.on('data', c => d += c); res.on('end', () => { try { const j = JSON.parse(d); if (j.errors) return reject(new Error(j.errors.map(e => e.message).join('; '))); resolve(j.data); } catch (e) { reject(e); } });
+    });
+    req.on('error', reject); req.on('timeout', () => req.destroy(new Error('linear timeout')));
+    req.end(body);
+  });
+}
+
 async function control(a, p) {
   const lid = p.loop;
   switch (a) {
@@ -206,6 +221,20 @@ async function control(a, p) {
     }
     case 'start-issue': { if (!lid || !p.issue) return { ok: false }; spawn(`${ROOT}/bin/spawn-worker.sh`, [lid, p.issue], { stdio: 'ignore' }); setTimeout(activateCmux, 8000); return { ok: true, out: p.issue + ' worker 시작 중...' }; }
     case 'close-tab': { if (!p.workspace) return { ok: false, out: 'no workspace' }; return sh(CMUX, ['close-workspace', '--workspace', p.workspace]); }
+    case 'cancel-issue': {   // 이슈 버리기: Linear → Canceled + 열린 세션 닫기 (worktree는 보존 — 불변식). snapshot 패치로 보드 즉시 반영.
+      if (!lid || !p.issue) return { ok: false, out: 'no issue' };
+      try {
+        const q = await linearGQL(`query($id:String!){ issue(id:$id){ id team { states { nodes { id type } } } } }`, { id: p.issue });
+        const iss = q && q.issue; if (!iss) return { ok: false, out: p.issue + ' Linear에서 못 찾음' };
+        const st = ((iss.team && iss.team.states && iss.team.states.nodes) || []).find(s => s.type === 'canceled');
+        if (!st) return { ok: false, out: '팀에 Canceled 상태가 없음' };
+        const m = await linearGQL(`mutation($id:String!,$s:String!){ issueUpdate(id:$id, input:{stateId:$s}){ success } }`, { id: iss.id, s: st.id });
+        if (!(m && m.issueUpdate && m.issueUpdate.success)) return { ok: false, out: 'Linear 업데이트 실패' };
+      } catch (e) { return { ok: false, out: 'Linear: ' + e.message }; }
+      try { const sp = `${LOOPS}/${lid}/state/snapshot.json`; const snap = readJSON(sp); if (snap && Array.isArray(snap.issues)) { const it = snap.issues.find(x => x.id === p.issue); if (it) { it.state = 'Canceled'; writeFileSync(sp, JSON.stringify(snap, null, 2)); } } } catch {}
+      if (p.workspace) { try { await sh(CMUX, ['close-workspace', '--workspace', p.workspace]); } catch {} }
+      return { ok: true, out: p.issue + ' → Canceled (보드에서 숨김)' };
+    }
     case 'save-mission': { if (!lid) return { ok: false }; try { writeFileSync(`${LOOPS}/${lid}/mission.md`, p.content || ''); return { ok: true, out: 'mission 저장' }; } catch (e) { return { ok: false, out: '' + e }; } }
     case 'save-config': {
       if (!lid) return { ok: false }; const cfg = readJSON(cfgPath(lid)) || {};
