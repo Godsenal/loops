@@ -12,8 +12,7 @@ LOCKDIR=/tmp/loop-$LOOP.lockdir
 if ! mkdir "$LOCKDIR" 2>/dev/null; then echo "⏭ SKIP $LOOP: 이전 run 진행중(lock)"; exit 0; fi
 trap 'rmdir "$LOCKDIR" 2>/dev/null' EXIT
 
-cfgval(){ node -e 'const c=JSON.parse(require("fs").readFileSync(process.argv[1]));const v=process.argv[2].split(".").reduce((o,p)=>o&&o[p],c);process.stdout.write(v==null?"":String(v))' "$CFG" "$1"; }
-REPO="$(cfgval repo)"; ORCHWT="$(cfgval orchestratorWorktree)"; BASEREF="$(cfgval baseRef)"; [[ -z "$BASEREF" ]] && BASEREF=origin/develop
+REPO="$(cfgval "$CFG" repo)"; ORCHWT="$(cfgval "$CFG" orchestratorWorktree)"; BASEREF="$(cfgval "$CFG" baseRef)"; [[ -z "$BASEREF" ]] && BASEREF=origin/develop
 
 # 매 run 최신 기준 보장: 항상 fetch → worktree를 BASE_REF 최신으로 (LLM STEP0 fetch에 의존하지 않음).
 # 유저의 로컬 working tree는 절대 쓰지 않는다 — 근거/구현은 fetch 직후의 origin 기준.
