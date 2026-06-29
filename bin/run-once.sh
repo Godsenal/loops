@@ -13,6 +13,8 @@ if ! mkdir "$LOCKDIR" 2>/dev/null; then echo "⏭ SKIP $LOOP: 이전 run 진행�
 trap 'rmdir "$LOCKDIR" 2>/dev/null' EXIT
 
 REPO="$(cfgval "$CFG" repo)"; ORCHWT="$(cfgval "$CFG" orchestratorWorktree)"; BASEREF="$(cfgval "$CFG" baseRef)"; [[ -z "$BASEREF" ]] && BASEREF=origin/develop
+# claude 실행 커맨드 (config.json claudeCmd / 대시보드 설정). 비면 기본 `claude`. headless 인자는 아래에서 항상 덧붙임.
+CLAUDE_CMD="$(cfgval "$CFG" claudeCmd)"; [[ -z "$CLAUDE_CMD" ]] && CLAUDE_CMD=claude
 
 # 매 run 최신 기준 보장: 항상 fetch → worktree를 BASE_REF 최신으로 (LLM STEP0 fetch에 의존하지 않음).
 # 유저의 로컬 working tree는 절대 쓰지 않는다 — 근거/구현은 fetch 직후의 origin 기준.
@@ -26,7 +28,7 @@ fi
 
 PROMPT="$(node "$ROOT/bin/render-prompt.mjs" "$LOOP" orchestrator)"
 echo "[$(date '+%F %T')] ===== $LOOP orchestrator start (mode=$LOOP_MODE) =====" >> "$STATE/run.log"
-( cd "$ORCHWT" && claude -p "$PROMPT" --dangerously-skip-permissions ) >> "$STATE/run.log" 2>&1
+( cd "$ORCHWT" && ${=CLAUDE_CMD} -p "$PROMPT" --dangerously-skip-permissions ) >> "$STATE/run.log" 2>&1
 code=$?
 echo "[$(date '+%F %T')] ===== $LOOP orchestrator end (exit $code) =====" >> "$STATE/run.log"
 echo "$code" > "$STATE/.last_run_exit"   # 최신 run의 exit (성공 run이 0으로 덮어 배너 자동해제)
