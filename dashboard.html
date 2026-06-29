@@ -64,6 +64,7 @@ textarea{width:100%;font:12.5px/1.55 var(--mono);min-height:160px;resize:vertica
 #side{width:256px;border-right:1px solid var(--border);background:var(--panel);overflow-y:auto;flex-shrink:0;padding:14px 11px;display:flex;flex-direction:column}
 #side h2{font:700 14px/1 var(--sans);color:var(--fg);letter-spacing:.3px;margin:4px 4px;text-transform:none}
 #attnsum{margin:0 4px 10px;font-size:12px}#attnsum .attn{color:var(--danger);font-weight:600;cursor:pointer}#attnsum .clean{color:var(--muted2)}
+#connlost:not(:empty){margin:0 4px 10px}#connlost .cl{display:block;background:var(--danger-bg);color:var(--danger);border:1px solid color-mix(in srgb,var(--danger) 42%,transparent);border-radius:var(--radius-sm);padding:6px 9px;font:600 12px/1.4 var(--mono);font-variant-numeric:tabular-nums}
 .loopitem{padding:10px 11px;border-radius:var(--radius);cursor:pointer;margin-bottom:4px;border:1px solid transparent;position:relative;transition:background .12s,border-color .12s}
 .loopitem:hover{background:var(--card-hover)}
 .loopitem.sel{background:var(--card-hover);border-color:var(--border)}
@@ -107,7 +108,7 @@ h1{letter-spacing:-.4px;font-weight:700}
 .spin{display:inline-block;animation:spin 1.4s linear infinite}@keyframes spin{to{transform:rotate(360deg)}}
 </style></head><body>
 <div id="side"><div class="row" style="justify-content:space-between;margin-bottom:8px"><h2>⟳ Loops</h2><button class="ghost" id="themebtn" title="라이트/다크 전환" onclick="toggleTheme()">🌙</button></div>
-<button class="p" style="width:100%;justify-content:center;margin-bottom:12px" onclick="openCreate()">+ 새 loop</button><div id="attnsum"></div><div id="looplist"></div>
+<button class="p" style="width:100%;justify-content:center;margin-bottom:12px" onclick="openCreate()">+ 새 loop</button><div id="connlost"></div><div id="attnsum"></div><div id="looplist"></div>
 <div class="sec">디스패처(전역)</div><div id="gctl" class="row"></div></div>
 <div id="main"></div>
 
@@ -148,6 +149,7 @@ h1{letter-spacing:-.4px;font-weight:700}
 </div></div></div>
 <script>
 var sel=localStorage.getItem('loop')||null, renderedLoop=null, sRef=null, sLoop=null, sDispatcher=false, sTimer=null, lastData=null;
+var failCount=0, lastOk=0;
 function applyTheme(t){document.documentElement.dataset.theme=t;var b=document.getElementById('themebtn');if(b)b.textContent=t==='light'?'☀️':'🌙';}
 function toggleTheme(){var t=(localStorage.getItem('theme')||'dark')==='light'?'dark':'light';localStorage.setItem('theme',t);applyTheme(t);}
 applyTheme(localStorage.getItem('theme')||'dark');
@@ -266,6 +268,7 @@ document.addEventListener('keydown',function(ev){
  if((ev.metaKey||ev.ctrlKey)&&(ev.key==='s'||ev.key==='S')){var a=document.activeElement;if(a&&a.id==='missionbox'){ev.preventDefault();saveMission();}else if(a&&a.id==='cfgbox'){ev.preventDefault();saveConfigRaw();}else if(a&&a.id&&a.id.indexOf('cf_')===0){ev.preventDefault();saveConfig();}}
  if((ev.metaKey||ev.ctrlKey)&&ev.key==='Enter'){var a=document.activeElement;if(a&&a.id==='c_desc'){ev.preventDefault();buildLoop();}else if(a&&a.id==='g_decision'){ev.preventDefault();submitGate();}}
 });
-function load(){fetch('/api/status').then(function(r){return r.json();}).then(render).catch(function(){});}
+function renderConnLost(){var el=document.getElementById('connlost');if(failCount<2){el.innerHTML='';return;}var ago=lastOk?' — 마지막 갱신 '+rel(Math.floor(lastOk/1000)):'';el.innerHTML='<span class="cl">⚠️ 서버 연결 끊김'+ago+'</span>';}
+function load(){fetch('/api/status').then(function(r){return r.json();}).then(function(d){failCount=0;lastOk=Date.now();render(d);renderConnLost();}).catch(function(){failCount++;renderConnLost();});}
 load();setInterval(load,2000);
 </script></body></html>
