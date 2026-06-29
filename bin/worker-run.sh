@@ -6,13 +6,15 @@ LOOP="${LOOP_ID:?LOOP_ID 미설정}"
 ID="${LOOP_ISSUE:?LOOP_ISSUE 미설정}"
 ROOT="$LOOPS_HOME"
 PROMPT="$(node "$ROOT/bin/render-prompt.mjs" "$LOOP" worker)"
+# claude 실행 커맨드 (config.json claudeCmd / 대시보드 설정). 비면 기본 `claude`. headless 인자는 아래에서 항상 덧붙임.
+CLAUDE_CMD="$(cfgval "$ROOT/loops/$LOOP/config.json" claudeCmd)"; [[ -z "$CLAUDE_CMD" ]] && CLAUDE_CMD=claude
 # human-gate 해제: 사용자가 대시보드에서 결정을 내리면 decisions/<ISSUE>.md 에 저장된다 → 워커에 주입.
 DECISION_FILE="$ROOT/loops/$LOOP/state/decisions/$ID.md"
 DECISION=""
 [[ -f "$DECISION_FILE" ]] && DECISION="$(cat "$DECISION_FILE")"
 echo "════════ 🛠 $LOOP worker $ID 시작  $(date '+%F %T')  — 실시간 진행이 이 탭에 보입니다 ════════"
 [[ -n "$DECISION" ]] && echo "⚖️  사람이 내린 결정 주입됨 (human-gate 해제)"
-claude "$PROMPT
+${=CLAUDE_CMD} "$PROMPT
 
 ═══ 배정 이슈 ID: $ID ═══${DECISION:+
 
