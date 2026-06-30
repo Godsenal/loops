@@ -225,7 +225,8 @@ async function control(a, p) {
     }
     case 'start-issue': { if (!lid || !p.issue) return { ok: false }; spawn(`${ROOT}/bin/spawn-worker.sh`, [lid, p.issue], { stdio: 'ignore' }); setTimeout(activateCmux, 8000); return { ok: true, out: p.issue + ' worker 시작 중...' }; }
     case 'close-tab': { if (!p.workspace) return { ok: false, out: 'no workspace' }; return sh(CMUX, ['close-workspace', '--workspace', p.workspace]); }
-    case 'cancel-issue': {   // 이슈 버리기: Linear → Canceled + 열린 세션 닫기 (worktree는 보존 — 불변식). snapshot 패치로 보드 즉시 반영.
+    case 'cleanup-issue': { if (!lid || !p.issue) return { ok: false, out: 'no issue' }; spawn(`${ROOT}/bin/cleanup-issue.sh`, [lid, p.issue], { stdio: 'ignore' }); return { ok: true, out: p.issue + ' 정리 중… (탭·worktree·브랜치 제거)' }; }
+    case 'cancel-issue': {   // 이슈 버리기: Linear → Canceled + 세션 탭·worktree·브랜치 정리. snapshot 패치로 보드 즉시 반영.
       if (!lid || !p.issue) return { ok: false, out: 'no issue' };
       try {
         const q = await linearGQL(`query($id:String!){ issue(id:$id){ id team { states { nodes { id type } } } } }`, { id: p.issue });
@@ -236,8 +237,8 @@ async function control(a, p) {
         if (!(m && m.issueUpdate && m.issueUpdate.success)) return { ok: false, out: 'Linear 업데이트 실패' };
       } catch (e) { return { ok: false, out: 'Linear: ' + e.message }; }
       try { const sp = `${LOOPS}/${lid}/state/snapshot.json`; const snap = readJSON(sp); if (snap && Array.isArray(snap.issues)) { const it = snap.issues.find(x => x.id === p.issue); if (it) { it.state = 'Canceled'; writeFileSync(sp, JSON.stringify(snap, null, 2)); } } } catch {}
-      if (p.workspace) { try { await sh(CMUX, ['close-workspace', '--workspace', p.workspace]); } catch {} }
-      return { ok: true, out: p.issue + ' → Canceled (보드에서 숨김)' };
+      try { await sh(`${ROOT}/bin/cleanup-issue.sh`, [lid, p.issue]); } catch {}   // 탭 닫기 + worktree·브랜치 제거(제목으로 매칭하므로 ref 불필요)
+      return { ok: true, out: p.issue + ' → Canceled · 세션 탭·worktree 정리' };
     }
     case 'set-linear-key': {   // UI에서 Linear 개인키 입력 → 런타임 즉시 적용 + loops.env 영속화 (값은 어디에도 되돌려주지 않음)
       const key = (p.key || '').trim();
@@ -265,7 +266,8 @@ async function control(a, p) {
     case 'delete-loop': {
       const id = slugOf(lid || ''); if (!id) return { ok: false, out: 'no loop' };
       const dir = `${LOOPS}/${id}`; if (!dir.startsWith(LOOPS + '/') || !existsSync(dir)) return { ok: false, out: '경로 오류/없음' };
-      execFile('/bin/rm', ['-rf', dir], () => {}); return { ok: true, out: id + ' loop 삭제됨 (worktree·Linear는 보존)' };
+      try { execFileSync(`${ROOT}/bin/cleanup-loop.sh`, [id], { timeout: 60000 }); } catch {}   // rm 전에 worktree·탭 정리(config 살아있는 동안)
+      execFile('/bin/rm', ['-rf', dir], () => {}); return { ok: true, out: id + ' loop 삭제됨 (worktree·탭 정리 · Linear는 보존)' };
     }
     case 'build-loop': {
       const desc = p.description; if (!desc) return { ok: false, out: '설명 필요' };
