@@ -33,3 +33,7 @@ code=$?
 echo "[$(date '+%F %T')] ===== $LOOP orchestrator end (exit $code) =====" >> "$STATE/run.log"
 echo "$code" > "$STATE/.last_run_exit"   # 최신 run의 exit (성공 run이 0으로 덮어 배너 자동해제)
 date '+%s' > "$STATE/.last_run_done"
+
+# 종료 상태(Linear completed/canceled) worker worktree·탭·브랜치 자동 정리(결정론적 쉘 — LLM 안 거침).
+# cleanup-terminal.sh가 실제 worktree를 열거하고 Linear(권위 ledger) 상태로 종료 판정한다(snapshot은 폴백).
+"$ROOT/bin/cleanup-terminal.sh" "$LOOP" >> "$STATE/run.log" 2>&1
