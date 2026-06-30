@@ -1,6 +1,6 @@
 #!/bin/zsh
 # Loops 플랫폼 제어 CLI. (대시보드 버튼과 동일 — 서버/디스패처는 cmux 패널에서 실행되어야 함)
-# usage: loopctl dashboard|start|stop|pause|resume|run-now <loop>|worktrees <loop>|remote|status
+# usage: loopctl dashboard|start|stop|pause|resume|run-now <loop>|worktrees <loop>|cleanup <loop>|remote|status
 source "${0:A:h}/bin/_common.sh"
 ROOT="$LOOPS_HOME"; STATE=$ROOT/state; PID=$STATE/dispatcher.pid; PAUSED=$STATE/PAUSED
 CMUX="$CMUX_BIN"
@@ -62,6 +62,49 @@ case "${1:-status}" in
   resume) rm -f "$PAUSED"; echo "▶ 재개";;
   run-now) "$CMUX" new-workspace --cwd "$ROOT" --command "$ROOT/bin/spawn-orchestrator.sh ${2:?loop-id 필요}" >/dev/null 2>&1; echo "⚡ ${2} 1사이클 발사";;
   worktrees) worktrees "${2:-}";;
+  cleanup) # 확정-종료(Done/Canceled·머지/닫힘 PR) worktree·탭만 정리. `--dry` 면 삭제 없이 대상만 표시.
+           [[ "${3:-}" == "--dry" ]] && export CLEANUP_DRY_RUN=1
+           "$ROOT/bin/cleanup-terminal.sh" "${2:?usage: loopctl cleanup <loop> [--dry]}";;
+  doctor) # 전제도구·설정·런타임 헬스체크 (온보딩 후 점검).
+          echo "🩺 loopctl doctor"
+          source "$ROOT/bin/preflight.sh"; loops_preflight check
+          echo "⚙️  설정:"
+          [[ -f "$ROOT/loops.env" ]] && echo "  ✅ loops.env" || echo "  ⚠️  loops.env 없음 — ./install.sh"
+          [[ -n "${LINEAR_API_KEY:-}" ]] && echo "  ✅ LINEAR_API_KEY 설정됨" || echo "  ⚠️  LINEAR_API_KEY 없음 — 대시보드 ⚙️ 에서 입력(정리 신호·백로그 발굴에 필요)"
+          command -v loopctl >/dev/null && echo "  ✅ loopctl PATH 등록 ($(command -v loopctl))" || echo "  ⚠️  loopctl PATH 미등록 — ./install.sh 재실행 또는 ~/.local/bin 심볼릭"
+          echo "🚦 런타임:"
+          if alive; then echo "  ● dispatcher running (pid $(cat $PID))"; else echo "  ○ dispatcher stopped — 'loopctl start'"; fi
+          [[ -f "$PAUSED" ]] && echo "  ⏸ 전역 PAUSED"
+          if curl -s -o /dev/null --max-time 2 "http://localhost:${LOOPS_PORT:-8422}/" 2>/dev/null; then echo "  ✅ 대시보드 응답 (http://localhost:${LOOPS_PORT:-8422})"; else echo "  ○ 대시보드 미응답 — 'loopctl dashboard'"; fi
+          echo "📁 loops: $(ls "$ROOT/loops" 2>/dev/null | tr '\n' ' ')";;
+  help|-h|--help)
+          PORTV="${LOOPS_PORT:-8422}"
+          cat <<EOF
+Loops — 멀티루프 자율 에이전트 플랫폼. 헤드리스 Claude Code 워커가 도메인별로 작업을 발굴→구현→PR 한다. **머지는 사람.**
+
+런타임:
+  loopctl dashboard            대시보드 (http://localhost:$PORTV, cmux 패널)
+  loopctl start | stop         전역 디스패처 시작 / 중지
+  loopctl pause | resume       전역 일시정지 / 재개
+  loopctl status               디스패처·루프 상태
+  loopctl run-now <loop>       루프 1사이클 즉시 발사
+
+정리:
+  loopctl worktrees <loop>         종료 이슈 잔여 worktree 진단 (읽기전용)
+  loopctl cleanup <loop> [--dry]   종료(Done/Canceled) worktree·탭·브랜치 정리
+
+온보딩 / 점검:
+  ./install.sh                 최초 설치 (전제도구 점검·설치, loopctl 전역 등록)
+  loopctl doctor               전제도구·설정·런타임 헬스체크
+  loopctl help                 이 도움말
+
+원격:
+  loopctl remote               Cloudflare 터널로 대시보드 외부 노출 (basic-auth)
+
+안전 불변식: 엔진은 절대 merge / deploy / force-push 하지 않는다. 워커는 PR만 연다.
+루프 추가: 대시보드 '+ 새 loop' (AI 생성) 또는 examples/ 복사 → loops/<id>/
+EOF
+          ;;
   remote) # Cloudflare quick tunnel로 대시보드 외부 노출. 인증은 서버 자체(LOOPS_REMOTE_AUTH basic-auth)가 담당 — 터널 경유 요청에만 적용.
           AUTH="${LOOPS_REMOTE_AUTH:-}"
           if [[ -z "$AUTH" ]]; then
@@ -78,5 +121,5 @@ case "${1:-status}" in
           echo "   (Ctrl-C 종료 · quick tunnel URL은 실행마다 바뀜 · 인증은 서버 basic-auth가 처리)"
           exec cloudflared tunnel --url "http://localhost:${LOOPS_PORT:-8422}";;
   status) if alive; then echo "● running (pid $(cat $PID))"; else echo "○ stopped"; fi; [[ -f $PAUSED ]] && echo "⏸ PAUSED"; echo "loops: $(ls "$ROOT/loops" 2>/dev/null | tr '\n' ' ')";;
-  *) echo "usage: loopctl dashboard|start|stop|pause|resume|run-now <loop>|worktrees <loop>|remote|status";;
+  *) echo "알 수 없는 명령: ${1:-}"; echo; exec "$0" help;;
 esac

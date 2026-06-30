@@ -5,21 +5,14 @@ set -u
 LOOPS_HOME="${0:A:h}"
 echo "📦 Loops 설치 — LOOPS_HOME=$LOOPS_HOME"
 
-# --- 도구 탐지 ---
-NODE="$(command -v node 2>/dev/null)"
-GH="$(command -v gh 2>/dev/null)"
-CMUX="$(command -v cmux 2>/dev/null)"
-CLAUDE="$(command -v claude 2>/dev/null)"
-# claude: cmux 래퍼일 수 있어 실제 바이너리 우선 (~/.local/bin/claude)
-[[ -x "$HOME/.local/bin/claude" ]] && CLAUDE="$HOME/.local/bin/claude"
-# cmux: PATH에 없으면 macOS 앱 번들
-[[ -z "$CMUX" && -x "/Applications/cmux.app/Contents/Resources/bin/cmux" ]] && CMUX="/Applications/cmux.app/Contents/Resources/bin/cmux"
+# --- 전제도구 점검 + 가이드 설치 (공유 preflight: 누락 시 brew 설치 y/N 제안) ---
+source "$LOOPS_HOME/bin/preflight.sh"
+loops_preflight install
+echo
 
-miss=0
-[[ -z "$NODE"   ]] && { echo "⚠️  node 미탐지";   miss=1; }
-[[ -z "$CLAUDE" ]] && { echo "⚠️  claude 미탐지"; miss=1; }
-[[ -z "$GH"     ]] && { echo "⚠️  gh 미탐지";     miss=1; }
-[[ -z "$CMUX"   ]] && { echo "⚠️  cmux 미탐지 (이 플랫폼은 cmux 전제)"; miss=1; }
+# 설치/탐지 후 최종 경로 해석 (loops.env 기록용). cmux/claude 는 앱 번들 폴백 포함(preflight 내부).
+NODE="$(loops_tool_path node)"; GH="$(loops_tool_path gh)"; CMUX="$(loops_tool_path cmux)"; CLAUDE="$(loops_tool_path claude)"
+miss=$LOOPS_MISSING
 
 # PATH prepend = node/claude/gh 들어있는 dir (심볼릭 유지 = 래퍼 dir, 중복 제거, ':' 결합)
 typeset -aU dirs
@@ -28,10 +21,18 @@ PREPEND="${(j.:.)dirs}"
 
 # 기존 값 보존(재실행 시) — loops.env 있으면 WORKTREE_BASE/DEFAULT_REPO/PORT/BUNDLE 유지
 WT_BASE="$HOME/LTH"; DEF_REPO=""; PORT="8422"; BUNDLE="com.cmuxterm.app"
+# 비관리 키(LINEAR_API_KEY·LOOPS_REMOTE_AUTH·사용자 커스텀)는 그대로 보존 — 재실행이 키를 날리면 안 됨.
+MANAGED="LOOPS_PATH_PREPEND CLAUDE_BIN CMUX_BIN GH_BIN CMUX_BUNDLE_ID WORKTREE_BASE DEFAULT_REPO LOOPS_PORT"
+EXTRA=""
 if [[ -f "$LOOPS_HOME/loops.env" ]]; then
   source "$LOOPS_HOME/loops.env" 2>/dev/null
   WT_BASE="${WORKTREE_BASE:-$WT_BASE}"; DEF_REPO="${DEFAULT_REPO:-$DEF_REPO}"
   PORT="${LOOPS_PORT:-$PORT}"; BUNDLE="${CMUX_BUNDLE_ID:-$BUNDLE}"
+  while IFS= read -r ln; do
+    [[ -z "$ln" || "$ln" == \#* ]] && continue
+    [[ " $MANAGED " == *" ${ln%%=*} "* ]] && continue
+    EXTRA+="$ln"$'\n'
+  done < "$LOOPS_HOME/loops.env"
 fi
 
 cat > "$LOOPS_HOME/loops.env" <<EOF
@@ -45,7 +46,8 @@ WORKTREE_BASE="$WT_BASE"
 DEFAULT_REPO="$DEF_REPO"
 LOOPS_PORT="$PORT"
 EOF
-echo "✅ loops.env 생성"
+[[ -n "$EXTRA" ]] && { print -r -- "# --- 보존된 키 (대시보드/원격 등이 기록) ---" >> "$LOOPS_HOME/loops.env"; printf '%s' "$EXTRA" >> "$LOOPS_HOME/loops.env"; }
+echo "✅ loops.env 생성 (기존 LINEAR_API_KEY 등 보존)"
 
 # 스킬이 LOOPS_HOME 찾는 포인터
 echo "$LOOPS_HOME" > "$HOME/.loops-home"
@@ -56,14 +58,25 @@ rm -rf "$HOME/.claude/skills/create-loop"
 ln -sfn "$LOOPS_HOME/skills/create-loop" "$HOME/.claude/skills/create-loop"
 echo "✅ create-loop 스킬 등록 (~/.claude/skills/create-loop → repo)"
 
+# loopctl 전역 등록 (~/.local/bin symlink → 어디서나, 어느 cwd에서나 `loopctl …`).
+# _common.sh가 ${0:A:h}로 LOOPS_HOME을 유도하고 :A가 symlink를 실제 경로로 해석하므로 cwd·심볼릭 무관 동작.
+BINDIR="$HOME/.local/bin"; mkdir -p "$BINDIR"
+ln -sfn "$LOOPS_HOME/loopctl" "$BINDIR/loopctl"
+if echo ":$PATH:" | grep -q ":$BINDIR:"; then
+  echo "✅ loopctl 전역 등록 ($BINDIR/loopctl → repo) — 어디서나 'loopctl cleanup <loop>' 등 실행 가능"
+else
+  echo "✅ loopctl 심볼릭 생성 ($BINDIR/loopctl) — ⚠️ $BINDIR 가 PATH에 없음: ~/.zshrc 에 'export PATH=\"\$HOME/.local/bin:\$PATH\"' 추가 후 새 셸"
+fi
+
 # 디렉토리 + 실행권한
 mkdir -p "$LOOPS_HOME/loops" "$LOOPS_HOME/state"
 chmod +x "$LOOPS_HOME/loopctl" "$LOOPS_HOME/dashboard-server.mjs" "$LOOPS_HOME/bin/"*.sh "$LOOPS_HOME/bin/render-prompt.mjs" 2>/dev/null
 
 echo
-echo "완료 ✅  다음:"
-echo "  $LOOPS_HOME/loopctl dashboard   # 대시보드 (http://localhost:$PORT, cmux 패널)"
-echo "  $LOOPS_HOME/loopctl start       # 디스패처 시작"
+echo "완료 ✅  다음 (loopctl 은 어느 디렉토리에서나 실행 가능):"
+echo "  loopctl dashboard          # 대시보드 (http://localhost:$PORT, cmux 패널)"
+echo "  loopctl start              # 디스패처 시작"
+echo "  loopctl cleanup <loop>     # 종료된 worktree·탭 정리 (--dry 로 미리보기)"
 echo "  loop 추가: 대시보드 '+ 새 loop' (AI 생성) 또는 examples/ 복사 → loops/<id>/"
 [[ -z "$DEF_REPO" ]] && echo "  (선택) loops.env 의 DEFAULT_REPO 에 기본 repo 절대경로를 넣으면 AI 빌더가 편함"
-[[ $miss -eq 1 ]] && echo "⚠️  일부 도구 미탐지 — loops.env 를 수동 보정하세요"
+[[ $miss -gt 0 ]] && echo "⚠️  전제도구 ${miss}개 미해결 — 위 설치 명령 실행 후 './install.sh' 재실행 (또는 'loopctl doctor' 로 재점검)"

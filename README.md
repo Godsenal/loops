@@ -8,18 +8,39 @@
 - **cmux 연동**: worker는 cmux 탭에서 라이브로 돌고, 대시보드에서 세션 열기/닫기.
 
 ## 전제
-- macOS + **cmux** 터미널(소켓 제어), **claude** CLI, **gh**, **node**, **git**.
-- 작업 대상 repo는 git worktree를 쓰므로 git repo여야 함.
+macOS. `./install.sh`가 아래 도구를 점검하고 누락 시 brew 설치를 제안한다(`loopctl doctor`로 언제든 재점검).
 
-## 설치
+| 도구 | 용도 | 설치 |
+|---|---|---|
+| **cmux** | 워커 탭 spawn·대시보드 패널 (하드 전제) | `brew install --cask cmux` |
+| **claude** | 워커/오케스트레이터 본체 | cmux 번들 포함 / `curl -fsSL https://claude.ai/install.sh \| bash` |
+| **gh** | PR 조회·생성 | `brew install gh` |
+| **node** | 대시보드·프롬프트 렌더 | `brew install node` |
+| **git** | worktree | `xcode-select --install` |
+
+작업 대상 repo는 git worktree를 쓰므로 git repo여야 함. cmux 없는 환경은 미지원.
+
+## 설치 / 온보딩
 ```sh
 git clone <this-repo> ~/LTH/loops      # 위치 자유
 cd ~/LTH/loops
-./install.sh                            # 도구 자동탐지 → loops.env, 스킬 등록
-# (선택) loops.env 의 DEFAULT_REPO 에 기본 repo 절대경로 지정
-./loopctl dashboard                     # 대시보드 (cmux 패널)
-./loopctl start                         # 디스패처
+./install.sh                            # 전제도구 점검·설치 제안 → loops.env, 스킬 등록, loopctl 전역 등록
+loopctl help                            # 무엇을 할 수 있는지
+loopctl doctor                          # 설치·설정·런타임 점검
+loopctl dashboard                       # 대시보드 (cmux 패널)
+loopctl start                           # 디스패처
 ```
+`install.sh`는 `loopctl`을 `~/.local/bin`에 심볼릭한다 → **어느 디렉토리에서나** `loopctl …` 실행(앞에 `./` 불필요). Linear 키는 대시보드 ⚙️ 에서 입력(`loops.env`에 저장, gitignore). (선택) `loops.env`의 `DEFAULT_REPO`에 기본 repo 절대경로 지정.
+
+### 명령
+```
+런타임   loopctl dashboard | start | stop | pause | resume | status | run-now <loop>
+정리     loopctl worktrees <loop>           종료 이슈 잔여 worktree 진단(읽기전용)
+         loopctl cleanup <loop> [--dry]     종료(Done/Canceled) worktree·탭·브랜치 정리
+점검     loopctl doctor | help
+원격     loopctl remote                     Cloudflare 터널로 대시보드 외부 노출(basic-auth)
+```
+종료 상태(Linear `completed`/`canceled`) 이슈의 worktree·cmux 탭·브랜치는 오케스트레이터 run마다 **자동 정리**된다(대시보드 `🧹 정리` 버튼·위 `loopctl cleanup`으로 수동도 가능). 진행 중 worktree는 `claude --resume` 위해 보존.
 
 ## loop 만들기
 - **AI**: 대시보드 `+ 새 loop` → 한 줄 설명 → `Claude로 생성`. (또는 Claude Code 세션에서 "X 루프 만들어줘" — `create-loop` 스킬)
