@@ -58,6 +58,7 @@ loopctl start                           # 디스패처
 | `repo` | 작업 대상 repo의 **절대경로**. git repo여야 함. | `"/Users/me/proj"` | 필수 |
 | `baseRef` | worktree·PR diff의 기준 ref. | `"origin/develop"` | 선택(기본 `origin/develop`) |
 | `prBase` | PR을 머지할 대상 브랜치. | `"develop"` | 선택(기본 `develop`) |
+| `delivery` | worker 배포 방식. `"pr"`=PR만 열고 머지는 사람(기본). `"direct"`=PR 없이 `prBase`에 직접 push 후 이슈를 바로 Done(개인/리뷰어 없는 repo용). **두 모드 모두 force-push 금지.** | `"pr"` / `"direct"` | 선택(기본 `"pr"`) |
 | `branchPrefix` | worker 브랜치 이름 접두사. | `"loop-deadcode"` | 선택(기본 `loop-<id>`) |
 | `orchestratorWorktree` | orchestrator가 도는 worktree 절대경로. | `"/Users/me/wt/loop-deadcode"` | 필수 |
 | `worktreePrefix` | worker worktree 경로 접두사(이슈별 `-<slug>` 가 붙음). | `"/Users/me/wt/loop-deadcode"` | 필수 |
@@ -82,6 +83,6 @@ loops.env   (gitignore) 머신별 도구 경로 (install.sh 생성)
 ```
 
 ## 동작
-`dispatch.sh`(cmux 패널) 가 각 loop의 스케줄대로 `orchestrator`(headless)를 발사 → orchestrator가 Linear ledger로 dedup하며 작업을 발굴, capacity만큼 `worker`(cmux 라이브 탭) fan-out → worker가 구현 → `/gbase:go`(polish+PR) → preview 검증 → **머지 안 함**. human-gate 이슈는 사람에게 남긴다.
+`dispatch.sh`(cmux 패널) 가 각 loop의 스케줄대로 `orchestrator`(headless)를 발사 → orchestrator가 Linear ledger로 dedup하며 작업을 발굴, capacity만큼 `worker`(cmux 라이브 탭) fan-out → worker가 구현 → `/gbase:go`(polish+PR) → preview 검증 → **머지 안 함**. human-gate 이슈는 사람에게 남긴다. — 단 `delivery:"direct"` 루프(config.json)는 PR 대신 `prBase`로 직접 push하고 이슈를 바로 **Done**으로 옮긴다(In Review 없음). 어느 모드든 머지·force-push는 사람 게이트·금지 원칙을 그대로 유지한다.
 
 > ⚠️ 경로는 `LOOPS_HOME`(스크립트 자기위치)·`loops.env`로 전부 동적. cmux/claude/gh/node가 다른 위치여도 `install.sh`가 맞춰준다. cmux 없는 환경은 미지원.
