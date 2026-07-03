@@ -33,5 +33,20 @@ while true; do
       fi
     done
   fi
+
+  # ── reaper: 종료/고아 worker 탭을 orchestrator 스케줄과 독립으로 즉시(≤60s) 회수. ──
+  # cmux 소켓 접근이 필요해 이 디스패처 루프(=cmux 패널 안)에서 돈다. PAUSED와 무관한 housekeeping이라 위 가드 밖.
+  # 진행 중 run(lockdir)은 스킵 — 그 run이 끝에 스스로 cleanup-terminal 하므로 중복/레이스 방지. 무동작 reap은 CLEANUP_QUIET로 조용히.
+  now=$(date +%s); lastreap=$(cat "$STATE/.last_reap" 2>/dev/null || echo 0)
+  if (( now - lastreap >= 60 )); then
+    echo "$now" > "$STATE/.last_reap"
+    for CFG in $ROOT/loops/*/config.json; do
+      [[ -f "$CFG" ]] || continue
+      lid="$(field "$CFG" id)"; [[ -z "$lid" ]] && continue
+      [[ -d /tmp/loop-$lid.lockdir ]] && continue
+      CLEANUP_QUIET=1 "$ROOT/bin/cleanup-terminal.sh" "$lid" >> "$ROOT/loops/$lid/state/run.log" 2>&1
+    done
+  fi
+
   sleep 15
 done
