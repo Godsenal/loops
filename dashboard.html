@@ -218,6 +218,7 @@ function renderBody(d,L){
  var cap=L.maxWorkers||2,inflight=(c['In Progress']||0)+(c['In Review']||0),capacity=cap-inflight;
  var _segs='';for(var _gi=0;_gi<cap;_gi++)_segs+='<span class="seg'+(_gi<inflight?' fill':'')+'"></span>';
  h+='<div class="counts" style="margin-top:8px">'+['Backlog','In Progress','In Review','Done'].map(function(k){return '<span><b>'+(c[k]||0)+'</b> <span class="chip '+scc(k)+'">'+k+'</span></span>';}).join('')+'<span class="gauge'+(capacity<=0?' full':'')+'" title="동시 워커 슬롯 — 채워진 칸=가동중(In Progress+In Review) · cap '+cap+'"><span class="bars">'+_segs+'</span>슬롯 '+inflight+'/'+cap+'</span></div>';
+ h+=(lr&&lr.ts)?'<div class="muted" style="margin-top:6px;font-size:12px">🕒 마지막 run '+rel(lr.ts)+(L.nextTs?' · 다음 '+rel(L.nextTs):'')+'</div>':'';
  var _bl=(L.issues||[]);
  var actionable=_bl.filter(function(w){return w.state==='Backlog'&&w.flag!=='human-gate'&&w.attention!=='human-gate'&&!/run log/i.test(w.title||'');}).length;
  var gated=_bl.filter(function(w){return w.state==='Backlog'&&(w.flag==='human-gate'||w.attention==='human-gate');}).length;
