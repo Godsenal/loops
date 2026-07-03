@@ -18,13 +18,20 @@ typeset -A TERMINAL SLUGID
 id2slug(){ local s="${1:l}"; s="${s//[^a-z0-9]/-}"; print -r -- "${s%-}"; }
 
 # 1) 권위 신호 — Linear statusType. (LINEAR_API_KEY는 loops.env에 export 안 돼 있어 node 자식에 명시 전달.)
+#    자식 stderr를 버리지 않고 캡처 — 만료/무효 키·네트워크 장애로 인한 조용한 snapshot 강등을 로그에 노출한다.
 linear_n=0
 if [[ -n "$PID" && -n "${LINEAR_API_KEY:-}" ]]; then
+  lserr="$(mktemp)"
   while IFS=$'\t' read -r id t; do
     [[ -z "$id" ]] && continue
     sl="$(id2slug "$id")"; SLUGID[$sl]="$id"; (( linear_n++ ))
     [[ "$t" == "completed" || "$t" == "canceled" ]] && TERMINAL[$sl]=1
-  done < <(LINEAR_API_KEY="${LINEAR_API_KEY:-}" node "$ROOT/bin/linear-states.mjs" "$PID" 2>/dev/null)
+  done < <(LINEAR_API_KEY="${LINEAR_API_KEY:-}" node "$ROOT/bin/linear-states.mjs" "$PID" 2>"$lserr")
+  [[ -s "$lserr" ]] && echo "⚠️ cleanup-terminal $LOOP — $(<"$lserr")" >&2
+  rm -f "$lserr"
+  (( linear_n == 0 )) && echo "⚠️ cleanup-terminal $LOOP — LINEAR_API_KEY 있으나 linear-states 0건(만료/네트워크 의심) → snapshot 폴백" >&2
+elif [[ -z "${LINEAR_API_KEY:-}" ]]; then
+  echo "ℹ️ cleanup-terminal $LOOP — LINEAR_API_KEY 미설정 → snapshot 폴백" >&2
 fi
 
 # 2) 폴백/보강 — snapshot의 Done/Canceled (Linear 0건이면 폴백, 아니면 보강).
