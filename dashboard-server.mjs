@@ -343,6 +343,8 @@ const server = http.createServer((req, res) => {
   if (!authOK(req)) { res.writeHead(401, { 'WWW-Authenticate': 'Basic realm="loops dashboard"', 'content-type': 'text/plain; charset=utf-8' }); res.end('인증 필요'); return; }
   // HTML은 요청마다 fresh 읽기 → dashboard.html 편집 시 새로고침만 하면 즉시 반영 (서버 재시작 불필요)
   if (req.method === 'GET' && u.pathname === '/') { res.writeHead(200, { 'content-type': 'text/html; charset=utf-8' }); res.end(readText(`${ROOT}/dashboard.html`) || '<h1>dashboard.html 없음</h1>'); return; }
+  // 벤더링된 정적 에셋(Oat UI 등) — 무빌드. 파일명 화이트리스트로 경로 탈출 차단.
+  if (req.method === 'GET' && u.pathname.startsWith('/vendor/')) { const name = u.pathname.slice(8); if (!/^[a-zA-Z0-9._-]+$/.test(name)) { res.writeHead(400); res.end('bad'); return; } const body = readText(`${ROOT}/vendor/${name}`); if (!body) { res.writeHead(404); res.end('not found'); return; } const ct = name.endsWith('.css') ? 'text/css; charset=utf-8' : name.endsWith('.js') ? 'text/javascript; charset=utf-8' : 'application/octet-stream'; res.writeHead(200, { 'content-type': ct, 'cache-control': 'max-age=3600' }); res.end(body); return; }
   if (req.method === 'GET' && u.pathname === '/api/status') { res.writeHead(200, { 'content-type': 'application/json' }); res.end(JSON.stringify(status())); return; }
   if (req.method === 'GET' && u.pathname === '/api/session') { res.writeHead(200, { 'content-type': 'text/plain; charset=utf-8' }); res.end(sessionText(u)); return; }
   if (req.method === 'GET' && u.pathname === '/api/mission') { res.writeHead(200, { 'content-type': 'text/plain; charset=utf-8' }); res.end(promptText(u)); return; }

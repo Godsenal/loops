@@ -2,37 +2,50 @@
 <title>Loops</title>
 <link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;700&family=Space+Grotesk:wght@400;500;600;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="/vendor/oat.min.css">
 <style>
-/* ===== Loops — orchestration console ===== */
+/* ===== Loops — orchestration console · Oat UI 위에 telemetry 팔레트 매핑 ===== */
 :root{
+ color-scheme:dark;
  --sans:'Space Grotesk',-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;
  --mono:'JetBrains Mono',ui-monospace,SFMono-Regular,Menlo,monospace;
- --bg:#0a0e14;--panel:#0e141d;--card:#131c27;--card-hover:#19232f;
- --border:#1f2b3a;--border-strong:#2e4054;
- --fg:#dce4ee;--muted:#8294a7;--muted2:#566678;
- --signal:#37e0c8;--signal-hover:#57ead9;--signal-fg:#06231f;
- --success:#3fd068;--warning:#f0b429;--danger:#ff5d5d;--info:#5b9dff;
- --danger-bg:#2a1620;
+ --bg:#0a0e13;--panel:#0d131c;--card:#111a25;--card-hover:#16212e;
+ --border:#202c3b;--border-strong:#32475d;
+ --fg:#dbe4ef;--muted2:#5a6b7e;
+ --signal:#2fd0bb;--signal-hover:#46dccb;--signal-fg:#04241f;
+ --success:#41c47a;--warning:#e0a83a;--danger:#e8635f;--info:#5f9bef;
+ --danger-bg:#241722;
  --console:#070b10;--console-fg:#aec2cf;
- --radius:10px;--radius-sm:7px;--radius-lg:14px;--shadow:none;
+ --radius:9px;--radius-sm:6px;--radius-lg:14px;--shadow:0 1px 2px rgba(0,0,0,.28);
+ /* → Oat 변수 매핑 (Oat 컴포넌트가 telemetry 팔레트를 상속) */
+ --background:var(--bg);--foreground:var(--fg);--card-foreground:var(--fg);
+ --primary:var(--signal);--primary-foreground:var(--signal-fg);
+ --secondary:var(--card-hover);--secondary-foreground:var(--fg);
+ --muted:var(--card-hover);--muted-foreground:#8091a5;
+ --faint:var(--panel);--faint-foreground:var(--muted2);--accent:var(--card-hover);
+ --danger-foreground:#0a0e13;--success-foreground:#04241f;--warning-foreground:#0a0e13;
+ --input:var(--border);--ring:var(--signal);
+ --font-sans:var(--sans);--font-mono:var(--mono);
+ --radius-small:5px;--radius-medium:var(--radius);--radius-large:var(--radius-lg);
 }
 [data-theme=light]{
- --bg:#eaeff4;--panel:#ffffff;--card:#ffffff;--card-hover:#f2f6fa;
- --border:#dbe3ec;--border-strong:#bccbdb;
- --fg:#0d1822;--muted:#516579;--muted2:#8093a6;
- --signal:#0bab97;--signal-hover:#09917f;--signal-fg:#ffffff;
- --success:#1a9d47;--warning:#a86700;--danger:#d83b3b;--info:#2f6fe0;
+ color-scheme:light;
+ --bg:#eef2f6;--panel:#ffffff;--card:#ffffff;--card-hover:#f4f7fa;
+ --border:#e2e8f0;--border-strong:#c5d2df;
+ --fg:#101b27;--muted2:#8496a8;
+ --signal:#0f9e8d;--signal-hover:#0c8577;--signal-fg:#ffffff;
+ --success:#1f9d54;--warning:#9c6712;--danger:#cf4a45;--info:#3573d6;
  --danger-bg:#fceef0;
  --console:#0e141d;--console-fg:#aec2cf;
  --shadow:0 1px 2px rgba(16,32,48,.06),0 2px 6px rgba(16,32,48,.05);
+ --muted-foreground:#5a6b7d;--danger-foreground:#ffffff;--success-foreground:#ffffff;--warning-foreground:#ffffff;
 }
-*{box-sizing:border-box}
 body{margin:0;background:var(--bg);color:var(--fg);font:14px/1.55 var(--sans);display:flex;height:100vh;overflow:hidden;-webkit-font-smoothing:antialiased}
 /* machine data = mono telemetry */
-.counts b,.card .l>b,.chip,.loopitem .m,.t,#attnsum,.gauge{font-family:var(--mono);font-variant-numeric:tabular-nums}
+.counts b,.card .l>b,.loopitem .m,.t,#attnsum,.gauge{font-family:var(--mono);font-variant-numeric:tabular-nums}
 ::-webkit-scrollbar{width:11px;height:11px}::-webkit-scrollbar-thumb{background:var(--border-strong);border-radius:7px;border:3px solid transparent;background-clip:padding-box}::-webkit-scrollbar-thumb:hover{background:var(--muted2)}::-webkit-scrollbar-track{background:transparent}
-/* ===== buttons ===== */
-button{background:var(--card);color:var(--fg);border:1px solid var(--border);border-radius:var(--radius-sm);padding:5px 11px;cursor:pointer;font:600 13px/1.4 var(--sans);transition:background .12s,border-color .12s,opacity .12s;display:inline-flex;align-items:center;gap:5px;white-space:nowrap}
+/* ===== buttons — Oat 위에 앱 클래스 브릿지(.p 프라이머리 / bare·기타 조용 / .d 위험 / .ghost) ===== */
+button{background:var(--secondary);color:var(--secondary-foreground);border:1px solid var(--border);border-radius:var(--radius-sm);padding:5px 11px;cursor:pointer;font:600 13px/1.4 var(--sans);transition:background .12s,border-color .12s,opacity .12s;display:inline-flex;align-items:center;gap:5px;white-space:nowrap;box-shadow:none;text-transform:none;letter-spacing:0}
 button:hover{background:var(--card-hover);border-color:var(--border-strong)}
 button:active{opacity:.85}
 button:focus-visible{outline:none;box-shadow:0 0 0 2px var(--bg),0 0 0 4px color-mix(in srgb,var(--signal) 60%,transparent)}
@@ -40,28 +53,29 @@ button.p{background:var(--signal);border-color:transparent;color:var(--signal-fg
 button.p:hover{background:var(--signal-hover);border-color:transparent}
 button.d{background:transparent;border-color:color-mix(in srgb,var(--danger) 42%,var(--border));color:var(--danger)}
 button.d:hover{background:var(--danger-bg);border-color:var(--danger)}
-button.ghost{background:transparent;border-color:transparent;padding:4px 8px}
+button.ghost{background:transparent;border-color:transparent;padding:4px 8px;color:var(--fg)}
 button.ghost:hover{background:var(--card-hover);border-color:transparent}
-/* ===== inputs ===== */
-input,textarea,select{background:var(--bg);color:var(--fg);border:1px solid var(--border);border-radius:var(--radius-sm);padding:6px 9px;font:inherit;transition:border-color .12s,box-shadow .12s}
-input:focus,textarea:focus,select:focus{outline:none;border-color:var(--signal);box-shadow:0 0 0 3px color-mix(in srgb,var(--signal) 22%,transparent)}
-input{width:90px}
+button.small{padding:3px 8px;font-size:12px}
+button.gtx{min-width:34px;justify-content:center;padding:5px 8px;font-size:13px}
+/* ===== inputs — Oat가 스타일; 앱 전용 사이징만 유지 (체크박스/라디오/스위치는 Oat native 크기) ===== */
+input:not([type=checkbox]):not([type=radio]){width:90px}
 textarea{width:100%;font:12.5px/1.55 var(--mono);min-height:160px;resize:vertical}
 /* ===== bits ===== */
-.muted{color:var(--muted)}
+.muted{color:var(--muted-foreground)}
 .dot{width:8px;height:8px;border-radius:50%;display:inline-block;margin-right:7px;vertical-align:middle;background:var(--muted2)}
 .on{background:var(--success);animation:led 2.4s ease-in-out infinite}
 .off{background:var(--muted2)}
 .pause{background:var(--warning)}
 @keyframes led{0%,62%,100%{box-shadow:0 0 0 0 color-mix(in srgb,var(--success) 45%,transparent)}31%{box-shadow:0 0 0 5px color-mix(in srgb,var(--success) 0%,transparent)}}
 @media (prefers-reduced-motion:reduce){.on{animation:none}.spin{animation:none}}
-.chip{padding:1px 7px;border-radius:5px;font-size:11px;font-weight:500;border:1px solid var(--border);color:var(--muted);white-space:nowrap;display:inline-flex;align-items:center;gap:3px;letter-spacing:.2px}
-.s-Backlog{color:var(--muted)}
-.s-InProgress{color:var(--warning);border-color:color-mix(in srgb,var(--warning) 42%,transparent);background:color-mix(in srgb,var(--warning) 12%,transparent)}
-.s-InReview{color:var(--info);border-color:color-mix(in srgb,var(--info) 42%,transparent);background:color-mix(in srgb,var(--info) 12%,transparent)}
-.s-Done{color:var(--success);border-color:color-mix(in srgb,var(--success) 42%,transparent);background:color-mix(in srgb,var(--success) 12%,transparent)}
+/* Oat badge 튜닝: telemetry mono + info variant(Oat 미제공) + flex row에서 안 눌리게 */
+.badge{font-family:var(--mono);font-variant-numeric:tabular-nums;font-weight:500;letter-spacing:.2px;flex:none;padding:2px 9px}
+.badge[data-variant=info]{color:var(--info);background:color-mix(in srgb,var(--info) 20%,transparent)}
+[data-theme=light] .badge[data-variant=info]{background:color-mix(in srgb,var(--info) 10%,transparent)}
 /* ===== sidebar = fleet roster ===== */
-#side{width:256px;border-right:1px solid var(--border);background:var(--panel);overflow-y:auto;flex-shrink:0;padding:14px 11px;display:flex;flex-direction:column}
+#side{width:256px;border-right:1px solid var(--border);background:var(--panel);overflow-y:auto;overflow-x:hidden;flex-shrink:0;padding:14px 11px;display:flex;flex-direction:column}
+/* Oat 툴팁(title→data-tooltip ::after)이 긴 텍스트를 nowrap absolute로 렌더 → 숨은 pseudo가 가로 스크롤폭을 늘림. 폭 캡 + wrap으로 phantom 오버플로우 방지 */
+[data-tooltip]::after{max-width:min(320px,80vw);white-space:normal;line-height:1.4;text-align:left}
 #side h2{font:700 14px/1 var(--sans);color:var(--fg);letter-spacing:.3px;margin:4px 4px;text-transform:none}
 #attnsum{margin:0 4px 10px;font-size:12px}#attnsum .attn{color:var(--danger);font-weight:600;cursor:pointer}#attnsum .clean{color:var(--muted2)}
 #connlost:not(:empty){margin:0 4px 10px}#connlost .cl{display:block;background:var(--danger-bg);color:var(--danger);border:1px solid color-mix(in srgb,var(--danger) 42%,transparent);border-radius:var(--radius-sm);padding:6px 9px;font:600 12px/1.4 var(--mono);font-variant-numeric:tabular-nums}
@@ -70,25 +84,30 @@ textarea{width:100%;font:12.5px/1.55 var(--mono);min-height:160px;resize:vertica
 .loopitem.sel{background:var(--card-hover);border-color:var(--border)}
 .loopitem.sel::before{content:"";position:absolute;left:-1px;top:9px;bottom:9px;width:3px;border-radius:0 3px 3px 0;background:var(--signal)}
 .loopitem .n{font:600 13.5px/1.25 var(--sans);letter-spacing:-.1px}
-.loopitem .m{font-size:11px;color:var(--muted);margin-top:3px}
+.loopitem .m{font-size:11px;color:var(--muted-foreground);margin-top:3px}
 /* ===== main ===== */
-#main{flex:1;overflow-y:auto;padding:22px 28px 48px}
+#main{flex:1;overflow-y:auto;overflow-x:hidden;padding:22px 28px 48px}
 .row{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
 .sec{margin:24px 0 10px;color:var(--muted2);font:700 11px/1 var(--sans);text-transform:uppercase;letter-spacing:1.2px}
 h1{letter-spacing:-.4px;font-weight:700}
 /* ===== capacity gauge (signature) ===== */
-.gauge{display:inline-flex;align-items:center;gap:8px;font-size:11px;font-weight:600;color:var(--muted);text-transform:uppercase;letter-spacing:.6px}
+.gauge{display:inline-flex;align-items:center;gap:8px;font-size:11px;font-weight:600;color:var(--muted-foreground);text-transform:uppercase;letter-spacing:.6px}
 .counts .gauge{margin-left:auto;align-self:center}
 .gauge .bars{display:inline-flex;gap:3px}
 .gauge .seg{width:15px;height:8px;border-radius:2px;background:var(--border-strong)}
 .gauge .seg.fill{background:var(--warning)}
 .gauge.full .seg.fill{background:var(--danger)}
 /* ===== cards / issues ===== */
-.card{background:var(--card);border:1px solid var(--border);border-radius:var(--radius);padding:11px 14px;margin-bottom:7px;display:flex;gap:10px;align-items:center;justify-content:space-between;box-shadow:var(--shadow);transition:border-color .12s,background .12s}
+.card{background:var(--card);border:1px solid var(--border);border-radius:var(--radius);padding:10px 14px;margin-bottom:6px;display:flex;gap:12px;align-items:center;justify-content:space-between;box-shadow:var(--shadow);transition:border-color .12s,background .12s}
 .card:hover{border-color:var(--border-strong)}
-.card .l{display:flex;gap:10px;align-items:center;min-width:0}
-.card .l>b{font-size:12.5px;letter-spacing:.2px;color:var(--fg)}
-.card a{color:var(--signal);text-decoration:none;font-weight:600;font-size:12.5px}.card a:hover{text-decoration:underline}
+.card .l{display:flex;gap:9px;align-items:center;min-width:0;flex:1}
+.card .l>b{font-size:13px;letter-spacing:.2px;color:var(--fg);flex:none}
+.ititle{flex:1 1 auto;min-width:90px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:12.5px}
+.card .r,.card>.row{flex:none;gap:5px;justify-content:flex-end}
+.card .row button{padding:3px 8px;font-size:12px}
+.card .row button:not(.p):not(.d){color:var(--muted-foreground);background:transparent;border-color:transparent}
+.card .row button:not(.p):not(.d):hover{color:var(--fg);background:var(--card-hover)}
+.card a{color:var(--signal);text-decoration:none;font-weight:600;font-size:12px}.card a:hover{text-decoration:underline}
 .live{color:var(--success)}.dead{color:var(--muted2)}.t{color:var(--muted2);font-size:11px}
 /* ===== feed ===== */
 .feedline{padding:7px 12px;border-left:2px solid var(--border);margin-bottom:3px;font-size:13px;color:var(--fg)}
@@ -98,12 +117,14 @@ h1{letter-spacing:-.4px;font-weight:700}
 .counts>span{display:inline-flex;flex-direction:column;gap:6px;background:var(--card);border:1px solid var(--border);border-radius:var(--radius);padding:10px 15px;min-width:88px;box-shadow:var(--shadow)}
 .counts b{font-size:23px;font-weight:600;letter-spacing:-.5px;line-height:1}
 /* ===== modal ===== */
-.modal{display:none;position:fixed;inset:0;background:rgba(4,8,14,.66);backdrop-filter:blur(4px);z-index:50;padding:32px}
-.modal .box{background:var(--panel);border:1px solid var(--border);border-radius:var(--radius-lg);max-width:980px;margin:0 auto;height:100%;display:flex;flex-direction:column;box-shadow:0 24px 70px rgba(0,0,0,.5);overflow:hidden}
-.modal .hd{padding:14px 17px;border-bottom:1px solid var(--border);display:flex;justify-content:space-between;align-items:center;font:600 15px/1 var(--sans)}
-.modal pre{flex:1;overflow:auto;margin:0;padding:15px;font:12px/1.5 var(--mono);white-space:pre-wrap;color:var(--console-fg);background:var(--console)}
-.modal .body{padding:17px 19px;overflow:auto}
-.fld{display:flex;gap:10px;align-items:center;margin-bottom:9px}.fld label{width:130px;color:var(--muted);font-size:13px;flex-shrink:0}.fld input{width:auto;flex:1}
+/* 모달 = Oat 네이티브 <dialog>. 닫힘은 UA display:none 유지, 열림([open])에만 flex */
+.lmodal{width:min(96vw,980px);max-width:96vw;max-height:88vh;padding:0;background:var(--panel)}
+.lmodal[open]{display:flex;flex-direction:column}
+.lmodal>.hd{padding:14px 17px;border-bottom:1px solid var(--border);display:flex;justify-content:space-between;align-items:center;font:600 15px/1 var(--sans);flex:none}
+.lmodal>pre{flex:1;min-height:0;overflow:auto;margin:0;padding:15px;font:12px/1.5 var(--mono);white-space:pre-wrap;color:var(--console-fg);background:var(--console)}
+.lmodal>.body{padding:17px 19px;overflow:auto;flex:1;min-height:0}
+#smodal[open]{height:88vh}
+.fld{display:flex;gap:10px;align-items:center;margin-bottom:9px}.fld label{width:130px;color:var(--muted-foreground);font-size:13px;flex-shrink:0}.fld input{width:auto;flex:1}
 /* ===== misc ===== */
 .spin{display:inline-block;animation:spin 1.4s linear infinite}@keyframes spin{to{transform:rotate(360deg)}}
 </style></head><body>
@@ -112,8 +133,8 @@ h1{letter-spacing:-.4px;font-weight:700}
 <div class="sec">디스패처(전역)</div><div id="gctl" class="row"></div></div>
 <div id="main"></div>
 
-<div class="modal" id="smodal"><div class="box"><div class="hd"><b id="stitle"></b><button onclick="closeS()">✕</button></div><pre id="sbody"></pre></div></div>
-<div class="modal" id="cmodal"><div class="box"><div class="hd"><b>새 loop 만들기</b><button onclick="closeC()">✕</button></div><div class="body">
+<dialog id="smodal" class="lmodal" closedby="any"><div class="hd"><b id="stitle"></b><button onclick="closeS()">✕</button></div><pre id="sbody"></pre></dialog>
+<dialog id="cmodal" class="lmodal" closedby="any"><div class="hd"><b>새 loop 만들기</b><button onclick="closeC()">✕</button></div><div class="body">
  <div class="sec">🤖 AI로 만들기 (추천)</div>
  <textarea id="c_desc" placeholder="예: 웹뷰 리팩토링 루프 만들어줘 — webview의 거대 컴포넌트 분리하고 중복 로직 정리"></textarea>
  <div class="row" style="margin:8px 0 16px"><button class="p" onclick="buildLoop()">🤖 Claude로 생성</button> <span class="muted">mission·Linear 프로젝트·설정 자동 구성 (탭에서 진행 보임)</span></div>
@@ -127,30 +148,32 @@ h1{letter-spacing:-.4px;font-weight:700}
  <div class="sec">mission (메인 프롬프트 — 무슨 일을 어떻게 찾는가)</div>
  <textarea id="c_mission" placeholder="이 루프가 발굴할 작업과 방법을 적으세요."></textarea>
  <div class="row" style="margin-top:10px"><button class="p" onclick="createLoop()">생성</button> <span class="muted">생성 후 off — 사이드바에서 켜세요.</span></div>
-</div></div></div>
-<div class="modal" id="gmodal"><div class="box"><div class="hd"><b id="gtitle"></b><button onclick="closeG()">✕</button></div><div class="body">
+</div></dialog>
+<dialog id="gmodal" class="lmodal" closedby="any"><div class="hd"><b id="gtitle"></b><button onclick="closeG()">✕</button></div><div class="body">
  <div id="gctx" style="background:var(--card);border:1px solid var(--border);border-left:3px solid var(--warning);border-radius:var(--radius-sm);padding:10px 12px;margin-bottom:10px;font-size:13px;line-height:1.5"></div>
  <p class="muted" style="margin:0 0 8px">위 내용을 보고 <b>결정</b>을 적으세요. 워커가 이 지침을 최우선으로 따라 구현합니다 (이슈 본문의 human-gate는 해제됨). 보류/취소하려면 그렇게 적으면 됩니다.</p>
  <textarea id="g_decision" style="width:100%;height:120px" placeholder="예: 매물종류 화이트리스트는 아파트·오피스텔·원룸만. server sitemap spec이 실제 발행하는 조합만 링크할 것.&#10;또는: 이 BE 작업(ProptierDanji.nearbyPreschools)은 지금 보류 — 진행하지 말 것."></textarea>
  <div class="row" style="margin-top:10px"><button class="p" onclick="submitGate()">승인하고 워커 진행 ▶</button> <span class="muted">결정이 기록되고 즉시 워커 탭이 뜹니다.</span></div>
-</div></div></div>
-<div class="modal" id="omodal"><div class="box"><div class="hd"><b id="otitle">설정</b><span style="flex:1"></span><span id="oflash" class="live" style="margin-right:12px;font-size:12px"></span><button onclick="closeO()">✕</button></div><div class="body">
+</div></dialog>
+<dialog id="omodal" class="lmodal" closedby="any"><div class="hd"><b id="otitle">설정</b><span style="flex:1"></span><span id="oflash" class="live" style="margin-right:12px;font-size:12px"></span><button onclick="closeO()">✕</button></div><div class="body">
  <div class="sec">⏱ 스케줄</div>
  <div class="row"><span class="muted">시작</span> <input id="startAt" type="time"> <span class="muted">인터벌</span> <input id="ivMin" type="number" min="1" style="width:80px"> 분 <button class="p" onclick="setSched()">적용</button> <span id="schedinfo" class="muted"></span></div>
  <div class="sec">📝 mission (메인 프롬프트) <button class="p" onclick="saveMission()" style="float:right">저장 ⌘S</button></div>
  <textarea id="missionbox" style="height:200px"></textarea>
- <div class="sec">🔗 Linear API 키 <span class="muted" style="font-size:11px;font-weight:400">(전역 · 🗑버리기 기능용)</span><span id="linkeystat" class="muted" style="float:right;font-size:12px"></span></div>
- <div class="row"><input id="linearkeybox" type="password" placeholder="lin_api_… 붙여넣기" style="flex:1;width:auto;font-family:ui-monospace,monospace"> <button class="p" onclick="saveLinearKey()">저장</button></div>
- <div class="muted" style="font-size:11px;margin-top:4px">Linear → Settings → Security &amp; access → Personal API keys. 저장 즉시 적용(재시작 불필요), loops.env(gitignore)에 보관 · 값은 다시 표시 안 함.</div>
- <div class="sec">🤖 Telegram 원격 봇 <span class="muted" style="font-size:11px;font-weight:400">(전역 · 폰 알림+제어)</span><span id="tgstat" class="muted" style="float:right;font-size:12px"></span></div>
- <div class="row"><input id="tgtokenbox" type="password" placeholder="BotFather 봇 토큰 붙여넣기" style="flex:1;width:auto;font-family:ui-monospace,monospace"> <button class="p" onclick="saveTelegram()">저장</button></div>
- <div class="row" style="margin-top:6px"><button class="p" onclick="botStart()">▶ 봇 시작</button> <button class="d" onclick="botStop()">■ 중지</button> <span id="tgrun" class="muted" style="font-size:12px"></span></div>
- <div class="muted" style="font-size:11px;margin-top:4px">텔레그램 @BotFather → /newbot → 토큰 저장 → ▶ 봇 시작 → 봇에게 아무 메시지 = 페어링. 이후 🔴 게이트에 답장으로 결정·버튼 탭. loops.env(gitignore) 보관 · 값 재표시 안 함. (대시보드가 떠 있어야 알림 동작)</div>
  <div class="sec">⚙️ config <button class="p" onclick="saveConfig()" style="float:right">저장</button></div>
  <div id="cfgform"></div>
  <details style="margin-top:10px"><summary class="muted" style="cursor:pointer;font-size:12px">고급 — raw JSON 직접 편집 (위 폼에 없는 필드까지)</summary><textarea id="cfgbox" style="height:200px;margin-top:8px"></textarea><div><button onclick="saveConfigRaw()" style="margin-top:6px">raw JSON 저장</button></div></details>
  <div class="sec" style="border-top:1px solid var(--border);padding-top:12px;margin-top:14px"><button class="d" onclick="delLoop()">🗑 이 loop 삭제</button> <span class="muted">config/mission/state만 제거 (worktree·Linear·PR 보존)</span></div>
-</div></div></div>
+</div></dialog>
+<dialog id="wsmodal" class="lmodal" closedby="any"><div class="hd"><b>⚙️ 워크스페이스 설정 <span class="muted" style="font-weight:400;font-size:12px">· 전역</span></b><span style="flex:1"></span><span id="wsflash" class="live" style="margin-right:12px;font-size:12px"></span><button onclick="closeWS()">✕</button></div><div class="body">
+ <div class="sec">Linear API 키 <span class="muted" style="font-size:11px;font-weight:400">버리기·이슈정리 기능용</span><span id="linkeystat" class="muted" style="float:right;font-size:12px"></span></div>
+ <div class="row"><input id="linearkeybox" type="password" placeholder="lin_api_… 붙여넣기" style="flex:1;width:auto;font-family:var(--mono)"> <button class="p" onclick="saveLinearKey()">저장</button></div>
+ <div class="muted" style="font-size:11px;margin-top:4px">Linear → Settings → Security &amp; access → Personal API keys. 저장 즉시 적용(재시작 불필요), loops.env(gitignore)에 보관 · 값은 다시 표시 안 함.</div>
+ <div class="sec" style="margin-top:20px">Telegram 원격 봇 <span class="muted" style="font-size:11px;font-weight:400">폰 알림 + 원격제어</span><span id="tgstat" class="muted" style="float:right;font-size:12px"></span></div>
+ <div class="row"><input id="tgtokenbox" type="password" placeholder="BotFather 봇 토큰 붙여넣기" style="flex:1;width:auto;font-family:var(--mono)"> <button class="p" onclick="saveTelegram()">저장</button></div>
+ <div class="row" style="margin-top:8px"><button class="p" onclick="botStart()">▶ 봇 시작</button> <button class="d" onclick="botStop()">■ 중지</button> <span id="tgrun" class="muted" style="font-size:12px"></span></div>
+ <div class="muted" style="font-size:11px;margin-top:4px">@BotFather → /newbot → 토큰 저장 → ▶ 봇 시작 → 봇에게 아무 메시지 = 페어링. 이후 게이트에 답장으로 결정·버튼 탭. loops.env(gitignore) 보관 · 값 재표시 안 함. (대시보드가 떠 있어야 알림 동작)</div>
+</div></dialog>
 <script>
 var sel=localStorage.getItem('loop')||null, renderedLoop=null, sRef=null, sLoop=null, sDispatcher=false, sBot=false, sTimer=null, lastData=null;
 var failCount=0, lastOk=0;
@@ -168,12 +191,12 @@ function viewSession(ref,label){sRef=ref;sLoop=null;sDispatcher=false;sBot=false
 function viewLog(loop){sRef=null;sLoop=loop;sDispatcher=false;sBot=false;document.getElementById('stitle').textContent=loop+' orchestrator 로그';showS();}
 function viewDispatcherLog(){sRef=null;sLoop=null;sDispatcher=true;sBot=false;document.getElementById('stitle').textContent='📋 dispatcher 로그';showS();}
 function viewBotLog(){sRef=null;sLoop=null;sDispatcher=false;sBot=true;document.getElementById('stitle').textContent='🤖 Telegram 봇 로그';showS();}
-function showS(){document.getElementById('smodal').style.display='block';refS();if(sTimer)clearInterval(sTimer);sTimer=setInterval(refS,2500);}
-function closeS(){document.getElementById('smodal').style.display='none';sDispatcher=false;sBot=false;if(sTimer)clearInterval(sTimer);}
+function showS(){document.getElementById('smodal').showModal();refS();if(sTimer)clearInterval(sTimer);sTimer=setInterval(refS,2500);}
+function closeS(){document.getElementById('smodal').close();sDispatcher=false;sBot=false;if(sTimer)clearInterval(sTimer);}
 function refS(){var q=sBot?'bot=1':(sDispatcher?'dispatcher=1':(sRef?('ref='+encodeURIComponent(sRef)):('loop='+encodeURIComponent(sLoop))));fetch('/api/session?'+q).then(function(r){return r.text();}).then(function(t){document.getElementById('sbody').textContent=t;});}
-function openCreate(){document.getElementById('cmodal').style.display='block';setTimeout(function(){var e=document.getElementById('c_desc');if(e)e.focus();},50);}
+function openCreate(){document.getElementById('cmodal').showModal();setTimeout(function(){var e=document.getElementById('c_desc');if(e)e.focus();},50);}
 function buildLoop(){var d=document.getElementById('c_desc').value.trim();if(!d){alert('만들고 싶은 루프를 한 줄로 설명하세요');return;}fetch('/api/control',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({action:'build-loop',description:d})}).then(function(r){return r.json();}).then(function(j){alert(j.out||'');closeC();});}
-function closeC(){document.getElementById('cmodal').style.display='none';}
+function closeC(){document.getElementById('cmodal').close();}
 function createLoop(){var b={id:c_id.value,name:c_name.value,emoji:c_emoji.value,repo:c_repo.value,linearProjectId:c_pid.value,intervalMin:c_iv.value,mission:c_mission.value};fetch('/api/control',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify(Object.assign({action:'create-loop'},b))}).then(function(r){return r.json();}).then(function(j){alert(j.out||'');if(j.ok){closeC();var m=/loop 생성: (\S+)/.exec(j.out);selectLoop(m?m[1]:c_id.value);}});}
 function startIssue(id){if(!confirm(id+' 지금 작업 시작? (worker 탭 생성→구현→PR)'))return;ctl('start-issue',{issue:id});}
 function closeTab(ws){if(!confirm('이 worker 탭(cmux 패널/세션)을 닫을까요?'))return;ctl('close-tab',{workspace:ws});}
@@ -186,8 +209,8 @@ var gateId=null,gateInfo={};
 function openGate(id){gateId=id;var g=gateInfo[id]||{};document.getElementById('gtitle').textContent='⚖️ '+id+' — 판단 내리기';
  var ctx='<div style="font-weight:600;margin-bottom:6px">'+esc(g.title||id)+'</div>'+(g.ask?'<div><span style="color:var(--warning)">🤔 결정할 것:</span> '+esc(g.ask)+'</div>':'<div class="muted">이 human-gate의 상세 사유는 전체 본문에서 확인하세요 (orchestrator가 아직 요약을 안 남겼습니다).</div>')+(g.url?'<div style="margin-top:6px"><a href="'+esc(g.url)+'" target=_blank>전체 본문 ↗</a></div>':'');
  document.getElementById('gctx').innerHTML=ctx;
- document.getElementById('g_decision').value='';document.getElementById('gmodal').style.display='block';setTimeout(function(){document.getElementById('g_decision').focus();},50);}
-function closeG(){document.getElementById('gmodal').style.display='none';gateId=null;}
+ document.getElementById('g_decision').value='';document.getElementById('gmodal').showModal();setTimeout(function(){document.getElementById('g_decision').focus();},50);}
+function closeG(){document.getElementById('gmodal').close();gateId=null;}
 function submitGate(){var d=document.getElementById('g_decision').value.trim();if(!d){alert('결정 내용을 입력하세요');return;}if(!confirm(gateId+' — 이 결정으로 워커를 진행할까요?\n(human-gate 해제 + 워커 탭 생성)'))return;ctl('resolve-gate',{issue:gateId,decision:d}).then(function(j){if(j&&j.ok)closeG();});}
 function setSched(){ctl('set-schedule',{startAt:document.getElementById('startAt').value,intervalMin:document.getElementById('ivMin').value}).then(function(j){if(j&&j.ok)flash('스케줄 적용됨');});}
 function saveMission(){ctl('save-mission',{content:document.getElementById('missionbox').value}).then(function(j){if(j&&j.ok)flash('mission 저장됨');});}
@@ -205,7 +228,22 @@ function render(d){
  var attn=d.loops.reduce(function(s,L){return s+(L.attentionCount||0);},0);
  document.getElementById('attnsum').innerHTML=attn>0?'<span class="attn" onclick="selectAttention()" title="개입 필요한 첫 loop로 이동">🔴 '+attn+'건 개입 필요</span>':'<span class="clean">✓ clean</span>';
  var gd=d.dispatcher;
- document.getElementById('gctl').innerHTML='<span class="dot '+(gd.running?(gd.paused?'pause':'on'):'off')+'"></span>'+(gd.running?(gd.paused?'paused':'running'):'stopped')+' <button class="p" onclick="ctl(\'start\')">▶</button><button onclick="ctl(\'pause\')">⏸</button><button onclick="ctl(\'resume\')">▶▶</button><button class="d" onclick="ctl(\'stop\')">⏹</button> <button onclick="viewDispatcherLog()" title="디스패처 스케줄링/발사 로그 (state/dispatcher.log)">📋 dispatcher 로그</button>'+'<button onclick="viewBotLog()" title="Telegram 봇이 주고받은 알림·명령 로그"'+(d.telegram&&d.telegram.running?' class="p"':'')+'>🤖 봇 로그'+(d.telegram?(d.telegram.running?' ●':(d.telegram.configured?' ○':'')):'')+'</button>'+'<button class="'+(d.awake?'p':'')+'" title="ON이면 caffeinate로 idle 잠자기를 막아 맥이 깨어있고 디스패처가 계속 돕니다. ⚠️ 노트북 뚜껑을 닫는 잠자기는 막지 못합니다(전원 연결+뚜껑 열어두기 권장). 맥이 꺼지면 당연히 안 돕니다." onclick="ctl(\''+(d.awake?'awake-off':'awake-on')+'\')">'+(d.awake?'☕ 안잠(ON)':'💤 잠자기방지 OFF')+'</button>';
+ var _pz=gd.paused;
+ var gH='<div class="row" style="gap:8px;margin-bottom:9px"><span class="dot '+(gd.running?(_pz?'pause':'on'):'off')+'"></span><b style="font-size:13px;letter-spacing:.2px">'+(gd.running?(_pz?'paused':'running'):'stopped')+'</b></div>'
+  +'<div class="row" style="gap:5px">'
+  +'<button class="p gtx" onclick="ctl(\'start\')" title="디스패처 시작">▶</button>'
+  +'<button class="gtx" onclick="ctl(\''+(_pz?'resume':'pause')+'\')" title="'+(_pz?'재개':'일시정지')+'">'+(_pz?'▶▶':'⏸')+'</button>'
+  +'<button class="d gtx" onclick="ctl(\'stop\')" title="정지">⏹</button>'
+  +'<ot-dropdown><button class="gtx" title="로그·설정·안잠" popovertarget="gmenu">⋯</button>'
+  +'<menu popover id="gmenu">'
+  +'<button role="menuitem" class="ghost" popovertarget="gmenu" popovertargetaction="hide" onclick="viewDispatcherLog()">📋 dispatcher 로그</button>'
+  +'<button role="menuitem" class="ghost" popovertarget="gmenu" popovertargetaction="hide" onclick="viewBotLog()">🤖 봇 로그'+(d.telegram?(d.telegram.running?' ●':(d.telegram.configured?' ○':'')):'')+'</button>'
+  +'<button role="menuitem" class="ghost" popovertarget="gmenu" popovertargetaction="hide" onclick="openWS()">⚙️ 워크스페이스 설정</button>'
+  +'<hr>'
+  +'<button role="menuitem" class="ghost" popovertarget="gmenu" popovertargetaction="hide" onclick="ctl(\''+(d.awake?'awake-off':'awake-on')+'\')">'+(d.awake?'☕ 안잠 켜짐 · 끄기':'💤 잠자기방지 · 켜기')+'</button>'
+  +'</menu></ot-dropdown>'
+  +'</div>';
+ var gel=document.getElementById('gctl'); if(gel.dataset.h!==gH){gel.innerHTML=gH; gel.dataset.h=gH;}
  var L=d.loops.find(function(x){return x.id===sel;});
  if(!L){document.getElementById('main').innerHTML='<div class="muted" style="padding:40px">왼쪽에서 loop를 선택하세요.</div>';renderedLoop=null;return;}
  if(renderedLoop!==L.id){renderedLoop=L.id;document.getElementById('main').innerHTML='<div id="lbody"></div>';}
@@ -214,7 +252,7 @@ function render(d){
 function renderBody(d,L){
  var c=L.counts||{};
  var lr=L.lastRun;
- var banner=(lr&&lr.exit!==0)?'<div onclick="viewLog(\''+L.id+'\')" title="클릭하면 orchestrator 로그" style="cursor:pointer;background:var(--danger);color:#fff;padding:8px 12px;border-radius:6px;margin-bottom:10px;font-size:13px;font-weight:600">⚠️ 직전 orchestrator run 실패 (exit '+lr.exit+')'+(lr.ts?' · '+rel(lr.ts):'')+' — orch 로그 보기 ↗</div>':'';
+ var banner=(lr&&lr.exit!==0)?'<div role="alert" data-variant="danger" onclick="viewLog(\''+L.id+'\')" title="클릭하면 orchestrator 로그" style="cursor:pointer;margin-bottom:10px;font-size:13px;font-weight:600">⚠️ 직전 orchestrator run 실패 (exit '+lr.exit+')'+(lr.ts?' · '+rel(lr.ts):'')+' — orch 로그 보기 ↗</div>':'';
  var h=banner+'<div class="row" style="justify-content:space-between"><h1 style="margin:0;font-size:18px">'+L.emoji+' '+esc(L.name)+'</h1><div class="row">'
   +(L.orchRunning?'<button onclick="viewLog(\''+L.id+'\')" title="orchestrator 실행 중 — 클릭하면 라이브 로그"><span class="spin">⏳</span> 실행 중 · 로그</button>':'<button onclick="runNow()">⚡ run now</button>')
   +((L.mergedInReview>0||L.closedInReview>0)?'<button class="p" onclick="reconcile(\''+L.id+'\','+(L.mergedInReview+(L.closedInReview||0))+')">🧹 PR 정리 '+(L.mergedInReview+(L.closedInReview||0))+'건</button>':'')
@@ -225,61 +263,68 @@ function renderBody(d,L){
   +'<button class="p" onclick="openSettings()">⚙️ 설정</button></div></div>';
  var cap=L.maxWorkers||2,inflight=(c['In Progress']||0)+(c['In Review']||0),capacity=cap-inflight;
  var _segs='';for(var _gi=0;_gi<cap;_gi++)_segs+='<span class="seg'+(_gi<inflight?' fill':'')+'"></span>';
- h+='<div class="counts" style="margin-top:8px">'+['Backlog','In Progress','In Review','Done'].map(function(k){return '<span><b>'+(c[k]||0)+'</b> <span class="chip '+scc(k)+'">'+k+'</span></span>';}).join('')+'<span class="gauge'+(capacity<=0?' full':'')+'" title="동시 워커 슬롯 — 채워진 칸=가동중(In Progress+In Review) · cap '+cap+'"><span class="bars">'+_segs+'</span>슬롯 '+inflight+'/'+cap+'</span></div>';
+ h+='<div class="counts" style="margin-top:8px">'+['Backlog','In Progress','In Review','Done'].map(function(k){return '<span><b>'+(c[k]||0)+'</b> '+stateBadge(k)+'</span>';}).join('')+'<span class="gauge'+(capacity<=0?' full':'')+'" title="동시 워커 슬롯 — 채워진 칸=가동중(In Progress+In Review) · cap '+cap+'"><span class="bars">'+_segs+'</span>슬롯 '+inflight+'/'+cap+'</span></div>';
  h+=(lr&&lr.ts)?'<div class="muted" style="margin-top:6px;font-size:12px">🕒 마지막 run '+rel(lr.ts)+(L.nextTs?' · 다음 '+rel(L.nextTs):'')+'</div>':'';
  var _bl=(L.issues||[]);
  var actionable=_bl.filter(function(w){return w.state==='Backlog'&&w.flag!=='human-gate'&&w.attention!=='human-gate'&&!/run log/i.test(w.title||'');}).length;
  var gated=_bl.filter(function(w){return w.state==='Backlog'&&(w.flag==='human-gate'||w.attention==='human-gate');}).length;
- var bmsg,bcol;
- if(capacity<=0){bmsg='⛔ 실행 막힘 — 워커 슬롯 '+inflight+'/'+cap+' 꽉 참 (In Review PR 머지 대기). PR을 머지하면 다음 run이 backlog를 실행합니다.';bcol='var(--warning)';}
- else if(actionable>0){bmsg='▶ 다음 run에 최대 '+Math.min(capacity,actionable)+'건 실행 (여유 슬롯 '+capacity+'/'+cap+', 실행대기 backlog '+actionable+')';bcol='var(--success)';}
- else if(gated>0){bmsg='⚖️ 실행할 backlog 없음 — '+gated+'건이 human-gate (⚖️ 판단으로 풀어야 실행 후보가 됩니다)';bcol='var(--warning)';}
- else{bmsg='유휴 — 실행할 backlog 없음. 다음 audit이 새 작업을 발굴합니다.';bcol='var(--muted)';}
- h+='<div style="margin-top:6px;font-size:12.5px;color:'+bcol+'">'+bmsg+'</div>';
+ var bmsg,bvar;
+ if(capacity<=0){bmsg='⛔ 실행 막힘 — 워커 슬롯 '+inflight+'/'+cap+' 꽉 참 (In Review PR 머지 대기). PR을 머지하면 다음 run이 backlog를 실행합니다.';bvar='warning';}
+ else if(actionable>0){bmsg='▶ 다음 run에 최대 '+Math.min(capacity,actionable)+'건 실행 (여유 슬롯 '+capacity+'/'+cap+', 실행대기 backlog '+actionable+')';bvar='success';}
+ else if(gated>0){bmsg='⚖️ 실행할 backlog 없음 — '+gated+'건이 human-gate (⚖️ 판단으로 풀어야 실행 후보가 됩니다)';bvar='warning';}
+ else{bmsg='유휴 — 실행할 backlog 없음. 다음 audit이 새 작업을 발굴합니다.';bvar='';}
+ h+='<div role="alert"'+(bvar?' data-variant="'+bvar+'"':'')+' style="margin-top:8px;font-size:12.5px">'+bmsg+'</div>';
  var hideDone=localStorage.getItem('hideDone')!=='0';
  var allIts=L.issues||[]; var its=hideDone?allIts.filter(function(w){return !isTerminal(w.state);}):allIts; var hidden=allIts.length-its.length;
  allIts.forEach(function(w){if(w.flag==='human-gate'||w.attention==='human-gate')gateInfo[w.id]={title:w.title||'',ask:(w.gate&&w.gate.ask)||'',url:w.url||''};});
- h+='<div class="sec">이슈 / 세션 <label style="float:right;font-weight:400;font-size:12px;cursor:pointer;color:var(--muted)" title="완료(Done)·취소(Canceled)된 끝난 항목 숨기기"><input type="checkbox" onchange="toggleHideDone()"'+(hideDone?' checked':'')+'> 끝난 것 숨김'+(hidden>0?' ('+hidden+')':'')+'</label></div><div>'+(its.map(function(w){var gate=(w.flag==='human-gate'||w.attention==='human-gate')&&!w.gateResolved;return '<div class="card"><div class="l"><span class="'+(w.alive?'live':'dead')+'">'+(w.alive?'●':'○')+'</span><b>'+esc(w.id)+'</b><span class="chip '+scc(w.state)+'">'+esc(w.state)+'</span>'+pchip(w.priority)+'<span class="muted" style="max-width:280px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">'+esc(w.title||'')+'</span>'+(w.attention?'<span class="chip" style="color:var(--danger);border-color:var(--danger)">'+(attLabel[w.attention]||'🔴')+'</span>':'')+(w.gateResolved?'<span class="chip" style="color:var(--success);border-color:var(--success)">⚖️ 판단 완료</span>':'')+'</div><div class="row">'+(w.pr?'<a href="'+esc(w.pr)+'" target=_blank>PR↗</a>'+prChips(w):'')+(w.working?chip('🔧 작업중','var(--info)','워커가 구현 중 (아직 PR 없음)'):'')+(w.url?'<a href="'+esc(w.url)+'" target=_blank>이슈↗</a>':'')+(w.alive&&w.workspace?'<button onclick="viewSession(\''+w.workspace+'\',\'🛠 '+w.id+'\')">내용보기</button>':'')+((w.alive||w.hasWorktree)?'<button onclick="ctl(\'open-issue\',{issue:\''+w.id+'\'})">cmux 열기▶</button>':'')+(w.alive&&w.workspace?'<button class="d" onclick="closeTab(\''+w.workspace+'\')">✕ 닫기</button>':'')+(gate&&!w.alive?'<button class="p" onclick="openGate(\''+w.id+'\')">⚖️ 판단</button>':'')+((w.state==='Backlog'&&!gate&&!w.alive&&!/run log/i.test(w.title||''))?'<button class="p" onclick="startIssue(\''+w.id+'\')">'+(w.gateResolved?'▶ 시작 (판단반영)':'▶ 시작')+'</button>':'')+((!isTerminal(w.state)&&!/run log/i.test(w.title||''))?'<button class="d" onclick="discardIssue(\''+w.id+'\',\''+(w.workspace||'')+'\')">🗑 버리기</button>':'')+((isTerminal(w.state)&&(w.hasWorktree||w.alive)&&!/run log/i.test(w.title||''))?'<button class="d" onclick="cleanupIssue(\''+w.id+'\')">🧹 정리</button>':'')+'</div></div>';}).join('')||'<div class=muted>'+(hidden>0?'(끝난 항목 '+hidden+'건 숨김)':'이슈 없음 — ⚡run now')+'</div>')+'</div>';
+ h+='<div class="sec">이슈 / 세션 <label style="float:right;font-weight:400;font-size:12px;cursor:pointer;color:var(--muted-foreground)" title="완료(Done)·취소(Canceled)된 끝난 항목 숨기기"><input type="checkbox" onchange="toggleHideDone()"'+(hideDone?' checked':'')+'> 끝난 것 숨김'+(hidden>0?' ('+hidden+')':'')+'</label></div><div>'+(its.map(function(w){var gate=(w.flag==='human-gate'||w.attention==='human-gate')&&!w.gateResolved;return '<div class="card"><div class="l"><span class="'+(w.alive?'live':'dead')+'">'+(w.alive?'●':'○')+'</span><b>'+esc(w.id)+'</b>'+stateBadge(w.state)+pchip(w.priority)+'<span class="ititle muted">'+esc(w.title||'')+'</span>'+(w.attention?badge(attLabel[w.attention]||'주의','danger'):'')+(w.gateResolved?badge('판단 완료','success'):'')+'</div><div class="row">'+(w.pr?'<a href="'+esc(w.pr)+'" target=_blank>PR↗</a>'+prChips(w):'')+(w.working?chip('작업중','var(--info)','워커가 구현 중 (아직 PR 없음)'):'')+(w.url?'<a href="'+esc(w.url)+'" target=_blank>이슈↗</a>':'')+(w.alive&&w.workspace?'<button onclick="viewSession(\''+w.workspace+'\',\'🛠 '+w.id+'\')">내용보기</button>':'')+((w.alive||w.hasWorktree)?'<button onclick="ctl(\'open-issue\',{issue:\''+w.id+'\'})">cmux 열기▶</button>':'')+(w.alive&&w.workspace?'<button class="d" onclick="closeTab(\''+w.workspace+'\')">✕ 닫기</button>':'')+(gate&&!w.alive?'<button class="p" onclick="openGate(\''+w.id+'\')">⚖️ 판단</button>':'')+((w.state==='Backlog'&&!gate&&!w.alive&&!/run log/i.test(w.title||''))?'<button class="p" onclick="startIssue(\''+w.id+'\')">'+(w.gateResolved?'▶ 시작 (판단반영)':'▶ 시작')+'</button>':'')+((!isTerminal(w.state)&&!/run log/i.test(w.title||''))?'<button class="d" onclick="discardIssue(\''+w.id+'\',\''+(w.workspace||'')+'\')">🗑 버리기</button>':'')+((isTerminal(w.state)&&(w.hasWorktree||w.alive)&&!/run log/i.test(w.title||''))?'<button class="d" onclick="cleanupIssue(\''+w.id+'\')">🧹 정리</button>':'')+'</div></div>';}).join('')||'<div class=muted>'+(hidden>0?'(끝난 항목 '+hidden+'건 숨김)':'이슈 없음 — ⚡run now')+'</div>')+'</div>';
  h+='<div class="sec">활동 피드</div><div>'+((L.feed||[]).map(function(e){if(e.type==='cycle'&&e.event==='done')return '<div class="feedline fe-cycle">🔁 '+esc(e.audit||'-')+' · 발행 '+((e.filed||[]).length)+' · spawn '+(((e.spawned||[]).join(', '))||'-')+' <span class=t>'+rel(e.ts)+'</span></div>';if(e.type==='cycle')return '<div class="feedline fe-cycle muted">🔁 cycle 시작 <span class=t>'+rel(e.ts)+'</span></div>';if(e.type==='worker')return '<div class="feedline fe-worker">🛠 '+esc(e.issue)+' spawn <span class=t>'+rel(e.ts)+'</span></div>';return'';}).join('')||'<div class=muted>활동 없음</div>')+'</div>';
  document.getElementById('lbody').innerHTML=h;
 }
 function openSettings(){var L=lastData&&lastData.loops.find(function(x){return x.id===sel;});if(!L)return;
  document.getElementById('otitle').textContent='⚙️ '+esc(L.name||sel)+' 설정';
- document.getElementById('linearkeybox').value='';document.getElementById('linkeystat').textContent=(lastData&&lastData.linearKey)?'✓ 설정됨':'⚠️ 미설정';
- var tg=(lastData&&lastData.telegram)||{};document.getElementById('tgtokenbox').value='';document.getElementById('tgstat').textContent=tg.configured?(tg.paired?'✓ 연결됨':'⏳ 페어링 대기'):'⚠️ 미설정';document.getElementById('tgrun').textContent=tg.running?'● 실행 중':'○ 정지';
  document.getElementById('startAt').value=L.schedule.startAt||'';
  document.getElementById('ivMin').value=Math.round((L.schedule.intervalSec||3600)/60);
  document.getElementById('schedinfo').textContent=L.nextTs?('다음 발사 '+rel(L.nextTs)):(L.enabled?'':'(loop 꺼짐)');
- document.getElementById('omodal').style.display='block';
+ document.getElementById('omodal').showModal();
  fetch('/api/mission?loop='+sel).then(function(r){return r.text();}).then(function(t){document.getElementById('missionbox').value=t;});
  fetch('/api/config?loop='+sel).then(function(r){return r.text();}).then(function(t){document.getElementById('cfgbox').value=t;var cfg={};try{cfg=JSON.parse(t);}catch(e){}
   document.getElementById('cfgform').innerHTML=CFG_FIELDS.map(function(f){var v=cfg[f.k]==null?(f.def!=null?f.def:''):cfg[f.k];return '<div class="fld"><label title="'+esc(f.hint||'')+'">'+f.label+'</label><input id="cf_'+f.k+'"'+(f.type==='number'?' type="number" min="1"':'')+' value="'+esc(v)+'">'+(f.hint?' <span class="muted" style="font-size:11px">'+esc(f.hint)+'</span>':'')+'</div>';}).join('');});}
-function closeO(){document.getElementById('omodal').style.display='none';}
+function closeO(){document.getElementById('omodal').close();}
+function openWS(){document.getElementById('linearkeybox').value='';document.getElementById('linkeystat').textContent=(lastData&&lastData.linearKey)?'✓ 설정됨':'⚠️ 미설정';var tg=(lastData&&lastData.telegram)||{};document.getElementById('tgtokenbox').value='';document.getElementById('tgstat').textContent=tg.configured?(tg.paired?'✓ 연결됨':'⏳ 페어링 대기'):'⚠️ 미설정';document.getElementById('tgrun').textContent=tg.running?'● 실행 중':'○ 정지';document.getElementById('wsmodal').showModal();}
+function closeWS(){document.getElementById('wsmodal').close();}
 function saveConfigRaw(){var t=document.getElementById('cfgbox').value,o;try{o=JSON.parse(t);}catch(e){alert('JSON 오류: '+e.message);return;}ctl('save-config-raw',{config:o}).then(function(j){if(j&&j.ok)flash('raw config 저장됨');});}
-function flash(m){var e=document.getElementById('oflash');if(e){e.textContent=m;setTimeout(function(){if(e.textContent===m)e.textContent='';},2500);}}
-var attLabel={'merge-ready':'🔴 머지 대기','ci-failed':'🔴 CI 실패','changes':'🔴 변경요청','human-gate':'🔴 사람 판단','pr-closed':'🔴 PR 닫힘 — 정리 필요'};
+function flash(m){['oflash','wsflash'].forEach(function(id){var e=document.getElementById(id);if(e){e.textContent=m;setTimeout(function(){if(e.textContent===m)e.textContent='';},2500);}});}
+var attLabel={'merge-ready':'머지 대기','ci-failed':'CI 실패','changes':'변경요청','human-gate':'사람 판단','pr-closed':'PR 닫힘 — 정리 필요'};
 function isTerminal(s){return s==='Done'||s==='Canceled'||s==='Cancelled';}
-function chip(txt,col,tip){return ' <span class="chip" style="color:'+col+';border-color:'+col+'"'+(tip?' title="'+esc(tip)+'"':'')+'>'+txt+'</span>';}
-function pchip(p){var m={Urgent:['🔴 Urgent','var(--danger)'],High:['🟠 High','var(--warning)'],Medium:['🟡 Medium','var(--info)'],Low:['⚪ Low','var(--muted)']}[p];return m?chip(m[0],m[1],'우선순위: '+p):'';}
+// Oat 배지: 색→variant. 중립은 outline(요란한 solid 기본 회피).
+var VMAP={'var(--danger)':'danger','var(--warning)':'warning','var(--success)':'success','var(--info)':'info','var(--muted-foreground)':''};
+function badge(txt,v,tip){return ' <span class="badge'+(v?'':' outline')+'"'+(v?' data-variant="'+v+'"':'')+(tip?' title="'+esc(tip)+'"':'')+'>'+txt+'</span>';}
+function chip(txt,col,tip){return badge(txt,VMAP[col]||'',tip);}
+var STVAR={'Backlog':'','In Progress':'warning','In Review':'info','Done':'success','Canceled':'secondary','Cancelled':'secondary'};
+function stateBadge(s){return badge(esc(s),STVAR[s]==null?'':STVAR[s]);}
+function pchip(p){var m={Urgent:['Urgent','danger'],High:['High','warning'],Medium:['Medium','info'],Low:['Low','']}[p];return m?badge(m[0],m[1],'우선순위: '+p):'';}
 function prChips(w){
  if(!w.pr)return'';
- if(w.merged)return ' <span class="live">✅ 머지됨</span>';
- if(w.prState==='CLOSED')return chip('✕ 닫힘','var(--danger)');
+ if(w.merged)return chip('머지됨','var(--success)');
+ if(w.prState==='CLOSED')return chip('닫힘','var(--danger)');
  var s='',ci=w.ci;
- if(ci){if(ci.fail>0)s+=chip('❌ CI '+ci.fail,'var(--danger)','CI 실패 '+ci.fail+'개');else if(ci.pending>0)s+=chip('⏳ CI '+ci.pending,'var(--warning)','CI 진행중 '+ci.pending+'개');else if(ci.pass>0)s+=chip('✅ CI','var(--success)','CI 통과 '+ci.pass+'개');}
+ if(ci){if(ci.fail>0)s+=chip('CI '+ci.fail,'var(--danger)','CI 실패 '+ci.fail+'개');else if(ci.pending>0)s+=chip('CI '+ci.pending,'var(--warning)','CI 진행중 '+ci.pending+'개');else if(ci.pass>0)s+=chip('CI','var(--success)','CI 통과 '+ci.pass+'개');}
  var rd=w.review;
- if(rd==='APPROVED')s+=chip('✅ 승인','var(--success)');
- else if(rd==='CHANGES_REQUESTED')s+=chip('💬 변경요청','var(--danger)');
- else if(w.reviewCount>0)s+=chip('💬 리뷰 '+w.reviewCount,'var(--info)','리뷰 '+w.reviewCount+'개'+(w.commentCount?', 코멘트 '+w.commentCount:''));
+ if(rd==='APPROVED')s+=chip('승인','var(--success)');
+ else if(rd==='CHANGES_REQUESTED')s+=chip('변경요청','var(--danger)');
+ else if(w.reviewCount>0)s+=chip('리뷰 '+w.reviewCount,'var(--info)','리뷰 '+w.reviewCount+'개'+(w.commentCount?', 코멘트 '+w.commentCount:''));
  else s+=' <span class="muted" style="font-size:11px">리뷰 대기</span>';
  return s;
 }
 document.addEventListener('keydown',function(ev){
- if(ev.key==='Escape'){closeS();closeC();closeG();closeO();}
+ if(ev.key==='Escape'){closeS();closeC();closeG();closeO();closeWS();}
  if((ev.metaKey||ev.ctrlKey)&&(ev.key==='s'||ev.key==='S')){var a=document.activeElement;if(a&&a.id==='missionbox'){ev.preventDefault();saveMission();}else if(a&&a.id==='cfgbox'){ev.preventDefault();saveConfigRaw();}else if(a&&a.id&&a.id.indexOf('cf_')===0){ev.preventDefault();saveConfig();}}
  if((ev.metaKey||ev.ctrlKey)&&ev.key==='Enter'){var a=document.activeElement;if(a&&a.id==='c_desc'){ev.preventDefault();buildLoop();}else if(a&&a.id==='g_decision'){ev.preventDefault();submitGate();}}
 });
 function renderConnLost(){var el=document.getElementById('connlost');if(failCount<2){el.innerHTML='';return;}var ago=lastOk?' — 마지막 갱신 '+rel(Math.floor(lastOk/1000)):'';el.innerHTML='<span class="cl">⚠️ 서버 연결 끊김'+ago+'</span>';}
 function load(){fetch('/api/status').then(function(r){return r.json();}).then(function(d){failCount=0;lastOk=Date.now();render(d);renderConnLost();}).catch(function(){failCount++;renderConnLost();});}
 load();setInterval(load,2000);
-</script></body></html>
+</script>
+<script src="/vendor/oat.min.js" defer></script>
+</body></html>
