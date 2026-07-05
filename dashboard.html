@@ -142,13 +142,17 @@ h1{letter-spacing:-.4px;font-weight:700}
  <div class="sec">🔗 Linear API 키 <span class="muted" style="font-size:11px;font-weight:400">(전역 · 🗑버리기 기능용)</span><span id="linkeystat" class="muted" style="float:right;font-size:12px"></span></div>
  <div class="row"><input id="linearkeybox" type="password" placeholder="lin_api_… 붙여넣기" style="flex:1;width:auto;font-family:ui-monospace,monospace"> <button class="p" onclick="saveLinearKey()">저장</button></div>
  <div class="muted" style="font-size:11px;margin-top:4px">Linear → Settings → Security &amp; access → Personal API keys. 저장 즉시 적용(재시작 불필요), loops.env(gitignore)에 보관 · 값은 다시 표시 안 함.</div>
+ <div class="sec">🤖 Telegram 원격 봇 <span class="muted" style="font-size:11px;font-weight:400">(전역 · 폰 알림+제어)</span><span id="tgstat" class="muted" style="float:right;font-size:12px"></span></div>
+ <div class="row"><input id="tgtokenbox" type="password" placeholder="BotFather 봇 토큰 붙여넣기" style="flex:1;width:auto;font-family:ui-monospace,monospace"> <button class="p" onclick="saveTelegram()">저장</button></div>
+ <div class="row" style="margin-top:6px"><button class="p" onclick="botStart()">▶ 봇 시작</button> <button class="d" onclick="botStop()">■ 중지</button> <span id="tgrun" class="muted" style="font-size:12px"></span></div>
+ <div class="muted" style="font-size:11px;margin-top:4px">텔레그램 @BotFather → /newbot → 토큰 저장 → ▶ 봇 시작 → 봇에게 아무 메시지 = 페어링. 이후 🔴 게이트에 답장으로 결정·버튼 탭. loops.env(gitignore) 보관 · 값 재표시 안 함. (대시보드가 떠 있어야 알림 동작)</div>
  <div class="sec">⚙️ config <button class="p" onclick="saveConfig()" style="float:right">저장</button></div>
  <div id="cfgform"></div>
  <details style="margin-top:10px"><summary class="muted" style="cursor:pointer;font-size:12px">고급 — raw JSON 직접 편집 (위 폼에 없는 필드까지)</summary><textarea id="cfgbox" style="height:200px;margin-top:8px"></textarea><div><button onclick="saveConfigRaw()" style="margin-top:6px">raw JSON 저장</button></div></details>
  <div class="sec" style="border-top:1px solid var(--border);padding-top:12px;margin-top:14px"><button class="d" onclick="delLoop()">🗑 이 loop 삭제</button> <span class="muted">config/mission/state만 제거 (worktree·Linear·PR 보존)</span></div>
 </div></div></div>
 <script>
-var sel=localStorage.getItem('loop')||null, renderedLoop=null, sRef=null, sLoop=null, sDispatcher=false, sTimer=null, lastData=null;
+var sel=localStorage.getItem('loop')||null, renderedLoop=null, sRef=null, sLoop=null, sDispatcher=false, sBot=false, sTimer=null, lastData=null;
 var failCount=0, lastOk=0;
 function applyTheme(t){document.documentElement.dataset.theme=t;var b=document.getElementById('themebtn');if(b)b.textContent=t==='light'?'☀️':'🌙';}
 function toggleTheme(){var t=(localStorage.getItem('theme')||'dark')==='light'?'dark':'light';localStorage.setItem('theme',t);applyTheme(t);}
@@ -160,12 +164,13 @@ function scc(s){return 's-'+String(s||'').replace(/\s/g,'');}
 function ctl(a,ex){return fetch('/api/control',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify(Object.assign({action:a,loop:sel},ex||{}))}).then(function(r){return r.json();}).then(function(j){if(j&&j.ok===false&&j.out)alert(j.out);setTimeout(load,300);return j;});}
 function selectLoop(id){sel=id;localStorage.setItem('loop',id);renderedLoop=null;load();}
 function selectAttention(){var L=(lastData&&lastData.loops||[]).find(function(x){return (x.attentionCount||0)>0;});if(L)selectLoop(L.id);}
-function viewSession(ref,label){sRef=ref;sLoop=null;sDispatcher=false;document.getElementById('stitle').textContent=label;showS();}
-function viewLog(loop){sRef=null;sLoop=loop;sDispatcher=false;document.getElementById('stitle').textContent=loop+' orchestrator 로그';showS();}
-function viewDispatcherLog(){sRef=null;sLoop=null;sDispatcher=true;document.getElementById('stitle').textContent='📋 dispatcher 로그';showS();}
+function viewSession(ref,label){sRef=ref;sLoop=null;sDispatcher=false;sBot=false;document.getElementById('stitle').textContent=label;showS();}
+function viewLog(loop){sRef=null;sLoop=loop;sDispatcher=false;sBot=false;document.getElementById('stitle').textContent=loop+' orchestrator 로그';showS();}
+function viewDispatcherLog(){sRef=null;sLoop=null;sDispatcher=true;sBot=false;document.getElementById('stitle').textContent='📋 dispatcher 로그';showS();}
+function viewBotLog(){sRef=null;sLoop=null;sDispatcher=false;sBot=true;document.getElementById('stitle').textContent='🤖 Telegram 봇 로그';showS();}
 function showS(){document.getElementById('smodal').style.display='block';refS();if(sTimer)clearInterval(sTimer);sTimer=setInterval(refS,2500);}
-function closeS(){document.getElementById('smodal').style.display='none';sDispatcher=false;if(sTimer)clearInterval(sTimer);}
-function refS(){var q=sDispatcher?'dispatcher=1':(sRef?('ref='+encodeURIComponent(sRef)):('loop='+encodeURIComponent(sLoop)));fetch('/api/session?'+q).then(function(r){return r.text();}).then(function(t){document.getElementById('sbody').textContent=t;});}
+function closeS(){document.getElementById('smodal').style.display='none';sDispatcher=false;sBot=false;if(sTimer)clearInterval(sTimer);}
+function refS(){var q=sBot?'bot=1':(sDispatcher?'dispatcher=1':(sRef?('ref='+encodeURIComponent(sRef)):('loop='+encodeURIComponent(sLoop))));fetch('/api/session?'+q).then(function(r){return r.text();}).then(function(t){document.getElementById('sbody').textContent=t;});}
 function openCreate(){document.getElementById('cmodal').style.display='block';setTimeout(function(){var e=document.getElementById('c_desc');if(e)e.focus();},50);}
 function buildLoop(){var d=document.getElementById('c_desc').value.trim();if(!d){alert('만들고 싶은 루프를 한 줄로 설명하세요');return;}fetch('/api/control',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({action:'build-loop',description:d})}).then(function(r){return r.json();}).then(function(j){alert(j.out||'');closeC();});}
 function closeC(){document.getElementById('cmodal').style.display='none';}
@@ -188,6 +193,9 @@ function setSched(){ctl('set-schedule',{startAt:document.getElementById('startAt
 function saveMission(){ctl('save-mission',{content:document.getElementById('missionbox').value}).then(function(j){if(j&&j.ok)flash('mission 저장됨');});}
 function saveConfig(){var o={};CFG_FIELDS.forEach(function(f){var el=document.getElementById('cf_'+f.k);if(!el)return;var v=el.value;if(f.type==='number')v=+v;o[f.k]=v;});ctl('save-config',o).then(function(j){if(j&&j.ok)flash('config 저장됨');else if(j&&j.out)alert(j.out);});}
 function saveLinearKey(){var v=document.getElementById('linearkeybox').value.trim();if(!v){alert('Linear 키를 붙여넣으세요');return;}ctl('set-linear-key',{key:v}).then(function(j){if(j&&j.ok){document.getElementById('linearkeybox').value='';flash('Linear 키 저장됨');var s=document.getElementById('linkeystat');if(s)s.textContent='✓ 설정됨';}else if(j&&j.out)alert(j.out);});}
+function saveTelegram(){var v=document.getElementById('tgtokenbox').value.trim();if(!v){alert('BotFather 봇 토큰을 붙여넣으세요');return;}ctl('set-telegram',{token:v}).then(function(j){if(j&&j.ok){document.getElementById('tgtokenbox').value='';flash('봇 토큰 저장됨');var s=document.getElementById('tgstat');if(s)s.textContent='⏳ 페어링 대기';}else if(j&&j.out)alert(j.out);});}
+function botStart(){ctl('bot-start').then(function(j){if(j&&j.out)flash(j.out);});}
+function botStop(){if(!confirm('Telegram 봇을 중지할까요? (폰 알림·원격제어 멈춤)'))return;ctl('bot-stop').then(function(j){if(j&&j.out)flash(j.out);});}
 function delLoop(){if(!confirm(sel+' loop 삭제? config/mission/state 제거 (worktree·Linear·PR은 보존)'))return;ctl('delete-loop').then(function(){closeO();localStorage.removeItem('loop');sel=null;renderedLoop=null;load();});}
 
 function render(d){
@@ -197,7 +205,7 @@ function render(d){
  var attn=d.loops.reduce(function(s,L){return s+(L.attentionCount||0);},0);
  document.getElementById('attnsum').innerHTML=attn>0?'<span class="attn" onclick="selectAttention()" title="개입 필요한 첫 loop로 이동">🔴 '+attn+'건 개입 필요</span>':'<span class="clean">✓ clean</span>';
  var gd=d.dispatcher;
- document.getElementById('gctl').innerHTML='<span class="dot '+(gd.running?(gd.paused?'pause':'on'):'off')+'"></span>'+(gd.running?(gd.paused?'paused':'running'):'stopped')+' <button class="p" onclick="ctl(\'start\')">▶</button><button onclick="ctl(\'pause\')">⏸</button><button onclick="ctl(\'resume\')">▶▶</button><button class="d" onclick="ctl(\'stop\')">⏹</button> <button onclick="viewDispatcherLog()" title="디스패처 스케줄링/발사 로그 (state/dispatcher.log)">📋 dispatcher 로그</button>'+'<button class="'+(d.awake?'p':'')+'" title="ON이면 caffeinate로 idle 잠자기를 막아 맥이 깨어있고 디스패처가 계속 돕니다. ⚠️ 노트북 뚜껑을 닫는 잠자기는 막지 못합니다(전원 연결+뚜껑 열어두기 권장). 맥이 꺼지면 당연히 안 돕니다." onclick="ctl(\''+(d.awake?'awake-off':'awake-on')+'\')">'+(d.awake?'☕ 안잠(ON)':'💤 잠자기방지 OFF')+'</button>';
+ document.getElementById('gctl').innerHTML='<span class="dot '+(gd.running?(gd.paused?'pause':'on'):'off')+'"></span>'+(gd.running?(gd.paused?'paused':'running'):'stopped')+' <button class="p" onclick="ctl(\'start\')">▶</button><button onclick="ctl(\'pause\')">⏸</button><button onclick="ctl(\'resume\')">▶▶</button><button class="d" onclick="ctl(\'stop\')">⏹</button> <button onclick="viewDispatcherLog()" title="디스패처 스케줄링/발사 로그 (state/dispatcher.log)">📋 dispatcher 로그</button>'+'<button onclick="viewBotLog()" title="Telegram 봇이 주고받은 알림·명령 로그"'+(d.telegram&&d.telegram.running?' class="p"':'')+'>🤖 봇 로그'+(d.telegram?(d.telegram.running?' ●':(d.telegram.configured?' ○':'')):'')+'</button>'+'<button class="'+(d.awake?'p':'')+'" title="ON이면 caffeinate로 idle 잠자기를 막아 맥이 깨어있고 디스패처가 계속 돕니다. ⚠️ 노트북 뚜껑을 닫는 잠자기는 막지 못합니다(전원 연결+뚜껑 열어두기 권장). 맥이 꺼지면 당연히 안 돕니다." onclick="ctl(\''+(d.awake?'awake-off':'awake-on')+'\')">'+(d.awake?'☕ 안잠(ON)':'💤 잠자기방지 OFF')+'</button>';
  var L=d.loops.find(function(x){return x.id===sel;});
  if(!L){document.getElementById('main').innerHTML='<div class="muted" style="padding:40px">왼쪽에서 loop를 선택하세요.</div>';renderedLoop=null;return;}
  if(renderedLoop!==L.id){renderedLoop=L.id;document.getElementById('main').innerHTML='<div id="lbody"></div>';}
@@ -238,6 +246,7 @@ function renderBody(d,L){
 function openSettings(){var L=lastData&&lastData.loops.find(function(x){return x.id===sel;});if(!L)return;
  document.getElementById('otitle').textContent='⚙️ '+esc(L.name||sel)+' 설정';
  document.getElementById('linearkeybox').value='';document.getElementById('linkeystat').textContent=(lastData&&lastData.linearKey)?'✓ 설정됨':'⚠️ 미설정';
+ var tg=(lastData&&lastData.telegram)||{};document.getElementById('tgtokenbox').value='';document.getElementById('tgstat').textContent=tg.configured?(tg.paired?'✓ 연결됨':'⏳ 페어링 대기'):'⚠️ 미설정';document.getElementById('tgrun').textContent=tg.running?'● 실행 중':'○ 정지';
  document.getElementById('startAt').value=L.schedule.startAt||'';
  document.getElementById('ivMin').value=Math.round((L.schedule.intervalSec||3600)/60);
  document.getElementById('schedinfo').textContent=L.nextTs?('다음 발사 '+rel(L.nextTs)):(L.enabled?'':'(loop 꺼짐)');

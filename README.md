@@ -38,9 +38,23 @@ loopctl start                           # 디스패처
 정리     loopctl worktrees <loop>           종료 이슈 잔여 worktree 진단(읽기전용)
          loopctl cleanup <loop> [--dry]     종료(Done/Canceled) worktree·탭·브랜치 정리
 점검     loopctl doctor | help
-원격     loopctl remote                     Cloudflare 터널로 대시보드 외부 노출(basic-auth)
+원격     loopctl bot                        Telegram 봇 — 폰으로 push 알림 + 결정·취소·재실행
+         loopctl remote                     Cloudflare 터널로 대시보드 외부 노출(basic-auth)
 ```
 종료 상태(Linear `completed`/`canceled`) 이슈의 worktree·cmux 탭·브랜치는 오케스트레이터 run마다 **자동 정리**된다(대시보드 `🧹 정리` 버튼·위 `loopctl cleanup`으로 수동도 가능). 진행 중 worktree는 `claude --resume` 위해 보존.
+
+### 폰에서 다 돌리기 — Telegram 봇
+컴퓨터 앞에 없어도 폰 하나로 **전부** 된다 — 활성 loop·진행 중 작업을 보고, 사람 판단(human-gate)·PR 준비·CI 실패 push를 받고, 그 자리에서 결정·취소·정리·재실행·디스패처 제어까지. 엔진은 그대로(봇은 대시보드 `/api/status`·`/api/control`만 호출 — **머지/배포/force-push는 여전히 안 함, 머지는 사람**).
+
+**셋업** (둘 중 하나):
+- 대시보드 ⚙️ 설정 → `🤖 Telegram 원격 봇`에 BotFather 토큰 저장 → `▶ 봇 시작`
+- 또는 CLI: `loops.env`에 `TELEGRAM_BOT_TOKEN=<토큰>` → `loopctl dashboard` 뜬 상태에서 `loopctl bot`
+
+그다음 새 봇에게 **아무 메시지** → chat-id 자동 페어링(이후 그 대화로만 알림·명령이 오간다).
+
+**쓰는 법 — 그냥 말로.** "지금 뭐 돌아가?", "myapp 한번 돌려", "GOD-8 그냥 진행해", "그거 취소해" 처럼 자연어로 보내면 봇이 `claude`(빠른 모델)로 의도를 파악해 실행한다(현재 상태를 컨텍스트로 줘서 loop/issue id를 알아서 고름). 파괴적 작업(취소·정리)은 바로 실행하지 않고 **확인 버튼**으로 되묻는다.
+
+탭이 편하면 **`/menu`** — 디스패처(시작/정지/일시정지/잠자기방지) → 루프(⚡실행/🧹PR정리/⏸정지/🔀on-off/📋작업) → 작업(✅진행/🗑취소/🧹정리/🔗PR). 🔴 게이트 알림엔 **답장으로 결정**을 적어도 된다. 슬래시도 있음: `/status` `/gates` `/resolve <ISSUE> <결정>` `/cancel` `/runnow <loop>` `/dispatcher start|stop` `/awake on|off` … (`/help`). 인증은 페어링된 chat-id 잠금. (자연어는 메시지마다 `claude` 1회 호출 — 몇 초 지연·토큰 비용; 모델은 `loops.env`의 `LOOPS_BOT_MODEL`로 변경)
 
 ## loop 만들기
 - **AI**: 대시보드 `+ 새 loop` → 한 줄 설명 → `Claude로 생성`. (또는 Claude Code 세션에서 "X 루프 만들어줘" — `create-loop` 스킬)

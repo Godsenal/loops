@@ -43,6 +43,9 @@ function globalDispatcher() {
 }
 // caffeinate(잠자기 방지) 살아있는 pid 또는 null. detached로 떠서 대시보드 서버 재시작과 무관하게 유지된다.
 function awakeStatus() { const t = readText(GAWAKE).trim(); const pid = t ? +t : null; return pid && pidAlive(pid) ? pid : null; }
+// Telegram 브리지(notify-bot) 상태 — 토큰/chat은 loops.env를 live로 다시 읽어 페어링을 즉시 반영, running은 pgrep. 비밀값은 노출 안 하고 boolean만.
+function botRunning() { try { execFileSync('/usr/bin/pgrep', ['-f', `${ROOT}/bin/notify-bot.mjs`], { timeout: 2000 }); return true; } catch { return false; } }
+function telegramStatus() { const e = loadEnv(); return { configured: !!(e.TELEGRAM_BOT_TOKEN || ''), paired: !!(e.TELEGRAM_CHAT_ID || ''), running: botRunning() }; }
 function feedOf(st) { return readText(`${st}/runs.jsonl`).trim().split('\n').filter(Boolean).map(l => { try { return JSON.parse(l); } catch { return null; } }).filter(Boolean); }
 
 // PR 상태 캐시 — 이슈 브랜치(branchPrefix/slug)로 라이브 조회. 60초마다 백그라운드 갱신(status 요청을 막지 않음).
@@ -133,7 +136,7 @@ function loopStatus(lid, allTabs) {
 }
 function status() {
   const allTabs = tabsAll();
-  return { now: Math.floor(Date.now() / 1000), dispatcher: globalDispatcher(), awake: !!awakeStatus(), linearKey: !!LINEAR_KEY, loops: listLoopIds().map(l => loopStatus(l, allTabs)) };
+  return { now: Math.floor(Date.now() / 1000), dispatcher: globalDispatcher(), awake: !!awakeStatus(), linearKey: !!LINEAR_KEY, telegram: telegramStatus(), loops: listLoopIds().map(l => loopStatus(l, allTabs)) };
 }
 
 function sh(cmd, args) { return new Promise(r => execFile(cmd, args, { timeout: 12000 }, (e, so, se) => r({ ok: !e, out: (so || '') + (se || '') }))); }
@@ -247,6 +250,20 @@ async function control(a, p) {
       try { setEnvVar('LINEAR_API_KEY', key); } catch (e) { return { ok: false, out: 'loops.env 저장 실패: ' + e.message }; }
       return { ok: true, out: 'Linear 키 저장됨 (즉시 적용 · 재시작 불필요)' };
     }
+    case 'set-telegram': {   // UI에서 Telegram 봇 토큰 입력 → loops.env 영속화 (값은 되돌려주지 않음). chat-id는 봇이 첫 메시지에서 자동 페어링.
+      const token = (p.token || '').trim();
+      if (!token) return { ok: false, out: '토큰이 비었음' };
+      try { setEnvVar('TELEGRAM_BOT_TOKEN', token); } catch (e) { return { ok: false, out: 'loops.env 저장 실패: ' + e.message }; }
+      return { ok: true, out: '봇 토큰 저장됨 — "봇 시작" 후 텔레그램에서 봇에게 아무 메시지를 보내면 페어링됩니다.' };
+    }
+    case 'bot-start': {   // Telegram 브리지를 cmux 패널로 기동 (dashboard/dispatcher와 동일 방식). 봇은 /api/status·/api/control만 호출 — merge/deploy/force-push 없음.
+      if (botRunning()) return { ok: true, out: '봇 이미 실행 중' };
+      if (!loadEnv().TELEGRAM_BOT_TOKEN) return { ok: false, out: '먼저 봇 토큰을 저장하세요.' };
+      const r = await sh(CMUX, ['new-workspace', '--cwd', ROOT, '--command', `node --watch ${ROOT}/bin/notify-bot.mjs`]);
+      const m = (r.out || '').match(/workspace:\d+/); if (m) { await sh(CMUX, ['rename-workspace', '--workspace', m[0], '🤖 loops bot']); reorderBottom(m[0]); }
+      return { ok: true, out: '🤖 봇 시작 (cmux 패널) — 페어링 안 됐으면 텔레그램에서 봇에게 메시지 보내세요' };
+    }
+    case 'bot-stop': { execFile('/usr/bin/pkill', ['-f', `${ROOT}/bin/notify-bot.mjs`], () => {}); return { ok: true, out: '봇 중지' }; }
     case 'save-mission': { if (!lid) return { ok: false }; try { writeFileSync(`${LOOPS}/${lid}/mission.md`, p.content || ''); return { ok: true, out: 'mission 저장' }; } catch (e) { return { ok: false, out: '' + e }; } }
     case 'save-config': {
       if (!lid) return { ok: false }; const cfg = readJSON(cfgPath(lid)) || {};
@@ -297,6 +314,11 @@ async function control(a, p) {
 }
 
 function sessionText(u) {
+  if (u.searchParams.get('bot')) {   // Telegram 봇이 주고받은 로그 (state/bot-log.jsonl) — 사람이 읽게 포맷
+    const lines = readText(`${GSTATE}/bot-log.jsonl`).split('\n').filter(Boolean).slice(-300);
+    if (!lines.length) return '(봇 로그 없음 — Telegram 봇이 아직 주고받은 기록이 없습니다. loops.env에 토큰 저장 후 "봇 시작")';
+    return lines.map(l => { try { const e = JSON.parse(l); const t = new Date(e.ts * 1000).toLocaleTimeString(); return `${t}  ${e.dir === 'in' ? '▸ 나 ' : '◂ 봇 '} ${e.text}`; } catch { return l; } }).join('\n');
+  }
   if (u.searchParams.get('ref')) { try { return execFileSync(CMUX, ['read-screen', '--workspace', u.searchParams.get('ref'), '--lines', '300'], { encoding: 'utf8', timeout: 5000 }); } catch (e) { return '(read-screen 실패)'; } }
   if (u.searchParams.get('dispatcher')) return readText(`${GSTATE}/dispatcher.log`).split('\n').slice(-300).join('\n');
   const lid = u.searchParams.get('loop'); if (lid) return readText(`${LOOPS}/${lid}/state/run.log`).split('\n').slice(-300).join('\n');
