@@ -295,7 +295,7 @@ function openWS(){document.getElementById('linearkeybox').value='';document.getE
 function closeWS(){document.getElementById('wsmodal').close();}
 function saveConfigRaw(){var t=document.getElementById('cfgbox').value,o;try{o=JSON.parse(t);}catch(e){alert('JSON 오류: '+e.message);return;}ctl('save-config-raw',{config:o}).then(function(j){if(j&&j.ok)flash('raw config 저장됨');});}
 function flash(m){['oflash','wsflash'].forEach(function(id){var e=document.getElementById(id);if(e){e.textContent=m;setTimeout(function(){if(e.textContent===m)e.textContent='';},2500);}});}
-var attLabel={'merge-ready':'머지 대기','ci-failed':'CI 실패','changes':'변경요청','human-gate':'사람 판단','pr-closed':'PR 닫힘 — 정리 필요'};
+var attLabel={'merge-ready':'머지 대기','ci-failed':'CI 실패','changes':'변경요청','human-gate':'사람 판단','pr-closed':'PR 닫힘 — 정리 필요','stalled-worker':'⚠️ worker 탭 없음(완료됐거나 중단됨) — 확인 필요'};
 function isTerminal(s){return s==='Done'||s==='Canceled'||s==='Cancelled';}
 // Oat 배지: 색→variant. 중립은 outline(요란한 solid 기본 회피).
 var VMAP={'var(--danger)':'danger','var(--warning)':'warning','var(--success)':'success','var(--info)':'info','var(--muted-foreground)':''};

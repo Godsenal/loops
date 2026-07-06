@@ -105,13 +105,15 @@ function loopStatus(lid, allTabs) {
     else if (live && live.state === 'OPEN') state = 'In Review';
     else if (live && live.state === 'CLOSED') state = (i.state === 'Done' || i.state === 'Canceled') ? i.state : 'In Review';  // 닫힘=정리 대상 → In Review 버킷 + pr-closed 플래그로 표시
     else if (!live && alive && i.state !== 'Done' && i.state !== 'Canceled') { state = 'In Progress'; working = true; }  // PR 아직 없고 탭 살아있음 = 진짜 작업중
+    // 박제 감지: snapshot은 In Progress인데 라이브 탭도 PR도 없음 = 죽었거나 완료 후 탭이 닫힌 worker (이미 계산된 alive/live만 조합, 신규 IO 없음). direct 모드는 PR이 상시 null이라 특히 필요.
+    const stalled = i.state === 'In Progress' && !alive && !live;
     return {
       ...i, state, snapState: i.state, pr: (live && live.url) || i.pr || null,
-      workspace: ws, alive, working, hasWorktree: existsSync(`${cfg.worktreePrefix || ''}-${slugOf(i.id)}`),
+      workspace: ws, alive, working, stalled, hasWorktree: existsSync(`${cfg.worktreePrefix || ''}-${slugOf(i.id)}`),
       merged: live ? live.merged : undefined, prState: live ? live.state : undefined, checks: live ? live.checks : undefined,
       ci: live ? live.ci : undefined, review: live ? live.review : undefined, reviewCount: live ? live.reviewCount : undefined,
       commentCount: live ? live.commentCount : undefined, gateResolved,
-      attention: (live ? live.attention : null) || (i.flag === 'human-gate' && !gateResolved ? 'human-gate' : null),
+      attention: (live ? live.attention : null) || (i.flag === 'human-gate' && !gateResolved ? 'human-gate' : null) || (stalled ? 'stalled-worker' : null),
     };
   }).sort((a, b) => (order[a.state] ?? 9) - (order[b.state] ?? 9));
   // counts는 파생 상태로 재계산 → 사이드바/카운트가 카드와 일치 (snap.counts는 시간당 1회라 뒤처짐).
