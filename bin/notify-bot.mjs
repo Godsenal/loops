@@ -80,6 +80,7 @@ const ATT = {
   'ci-failed': { emoji: '❌', label: 'CI 실패' },
   'changes': { emoji: '✍️', label: '변경 요청됨' },
   'pr-closed': { emoji: '🚪', label: 'PR 닫힘 (정리 대상)' },
+  'stuck': { emoji: '🧟', label: '워커 멈춤 — 자가복구 실패 (재시도/버리기 필요)' },
 };
 const STATE_EMOJI = { 'In Progress': '🔨', 'In Review': '👀', 'Backlog': '📋', 'Done': '✅', 'Canceled': '🚫' };
 
@@ -95,6 +96,7 @@ function messageFor(loop, issue, att) {
     return { text: `${head}\n${line}${ask}\n\n💬 이 메시지에 <b>답장</b>으로 결정을 적어 보내면 그대로 워커에 전달됩니다.`, keyboard: kb };
   }
   if (att === 'pr-closed') kb.push([{ text: '🧹 정리', callback_data: `cln|${loop.id}|${issue.id}` }]);
+  if (att === 'stuck') kb.push([{ text: '↻ 재시도', callback_data: `heal|${loop.id}|${issue.id}` }, { text: '🗑 버리기', callback_data: `cxl|${loop.id}|${issue.id}` }]);
   if (issue.pr) kb.push([{ text: '🔗 PR 열기', url: issue.pr }]);
   else if (issue.url) kb.push([{ text: '🔗 이슈', url: issue.url }]);
   return { text: `${head}\n${line}\n${ATT[att].emoji} ${ATT[att].label}`, keyboard: kb.length ? kb : null };
@@ -219,6 +221,7 @@ async function onCallback(cb) {
   }
   if (act === 'nop') return reply('취소됨');
   if (act === 'ok') { const r = await ctrl('resolve-gate', { loop, issue, decision: '✅ 승인 — 이슈 계획대로 그대로 진행하라. (텔레그램에서 승인됨)' }); return reply(r && r.ok ? `${issue} 진행` : (r?.out || '실패')); }
+  if (act === 'heal') { const r = await ctrl('heal-issue', { loop, issue }); return reply(r && r.ok ? `${issue} 재시도` : (r?.out || '실패')); }
   // 파괴적 액션: 1탭 → 확인 버튼으로 교체, 2탭(C) → 실행
   if (act === 'cxl') { await editMarkup(cb.message.message_id, [[{ text: '⚠️ 정말 취소?', callback_data: `cxlC|${loop}|${issue}` }, { text: '아니오', callback_data: 'nop' }]]); return reply(); }
   if (act === 'cln') { await editMarkup(cb.message.message_id, [[{ text: '⚠️ 정말 정리?', callback_data: `clnC|${loop}|${issue}` }, { text: '아니오', callback_data: 'nop' }]]); return reply(); }

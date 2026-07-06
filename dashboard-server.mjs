@@ -94,10 +94,15 @@ function loopStatus(lid, allTabs) {
   const f = feedOf(st);
   const order = { 'In Progress': 0, 'In Review': 1, 'Backlog': 2, 'Done': 3, 'Canceled': 4 };
   const tabByIssue = {};
-  for (const t of allTabs) { const m = (t.title || '').match(new RegExp('🛠\\s*' + lid + '\\s+(\\S+)')); if (m) tabByIssue[m[1].toUpperCase()] = t.ref; }
+  // 🛠=fresh worker, ↩=resume/heal 탭 둘 다 "살아있는 worker"로 인식 (안 하면 heal된 ↩ 탭을 죽은 걸로 오판해 워치독이 무한 재기동).
+  for (const t of allTabs) { const m = (t.title || '').match(new RegExp('(?:🛠|↩)\\s*' + lid + '\\s+(\\S+)')); if (m) tabByIssue[m[1].toUpperCase()] = t.ref; }
+  const liveness = readJSON(`${st}/liveness.json`) || {};   // watchdog.sh가 쓰는 spawn-liveness 상태 {issue:{attempts,escalated,...}}
   const issues = (snap?.issues || []).map(i => {
     const live = prByBranch[branchOf(cfg, lid, i.id)] || null;
     const ws = tabByIssue[i.id] || null, alive = !!ws;
+    const lv = liveness[i.id] || null;
+    const stuck = !!(lv && lv.escalated);                      // 워치독이 자가복구 N회 실패로 포기 → 사람 필요
+    const healing = !!(lv && lv.attempts > 0 && !lv.escalated && !alive);  // 자가복구 진행중(조용, 경보 아님)
     const gateResolved = i.flag === 'human-gate' && existsSync(`${st}/decisions/${i.id}.md`);
     // 표시 상태 = 라이브 신호(PR + 탭) 우선. snapshot은 시간당 1회라 뒤처지므로 보조로만.
     let state = i.state, working = false;
@@ -113,7 +118,9 @@ function loopStatus(lid, allTabs) {
       merged: live ? live.merged : undefined, prState: live ? live.state : undefined, checks: live ? live.checks : undefined,
       ci: live ? live.ci : undefined, review: live ? live.review : undefined, reviewCount: live ? live.reviewCount : undefined,
       commentCount: live ? live.commentCount : undefined, gateResolved,
-      attention: (live ? live.attention : null) || (i.flag === 'human-gate' && !gateResolved ? 'human-gate' : null) || (stalled ? 'stalled-worker' : null),
+      stuck, healing, healAttempts: lv ? (lv.attempts || 0) : 0,
+      // attention 우선순위: escalate된 stuck(강경) > 워치독 독립 baseline stalled(단 자가복구중이면 억제). healing은 경보 아님(칩만).
+      attention: (live ? live.attention : null) || (i.flag === 'human-gate' && !gateResolved ? 'human-gate' : null) || (stuck ? 'stuck' : null) || (stalled && !healing ? 'stalled-worker' : null),
     };
   }).sort((a, b) => (order[a.state] ?? 9) - (order[b.state] ?? 9));
   // counts는 파생 상태로 재계산 → 사이드바/카운트가 카드와 일치 (snap.counts는 시간당 1회라 뒤처짐).
@@ -229,6 +236,12 @@ async function control(a, p) {
       activateCmux(); return r;
     }
     case 'start-issue': { if (!lid || !p.issue) return { ok: false }; spawn(`${ROOT}/bin/spawn-worker.sh`, [lid, p.issue], { stdio: 'ignore' }); setTimeout(activateCmux, 8000); return { ok: true, out: p.issue + ' worker 시작 중...' }; }
+    case 'heal-issue': {   // stuck 이슈 수동 재시도: liveness 카운터 리셋(escalated 해제) + worktree 보존 재기동.
+      if (!lid || !p.issue) return { ok: false };
+      try { const lp = `${LOOPS}/${lid}/state/liveness.json`; const lo = readJSON(lp) || {}; delete lo[p.issue]; writeFileSync(lp, JSON.stringify(lo)); } catch {}
+      spawn(`${ROOT}/bin/heal-worker.sh`, [lid, p.issue], { stdio: 'ignore' }); setTimeout(activateCmux, 8000);
+      return { ok: true, out: p.issue + ' 재시도 중… (자가복구 카운터 리셋)' };
+    }
     case 'close-tab': { if (!p.workspace) return { ok: false, out: 'no workspace' }; return sh(CMUX, ['close-workspace', '--workspace', p.workspace]); }
     case 'cleanup-issue': { if (!lid || !p.issue) return { ok: false, out: 'no issue' }; spawn(`${ROOT}/bin/cleanup-issue.sh`, [lid, p.issue], { stdio: 'ignore' }); return { ok: true, out: p.issue + ' 정리 중… (탭·worktree·브랜치 제거)' }; }
     case 'cancel-issue': {   // 이슈 버리기: Linear → Canceled + 세션 탭·worktree·브랜치 정리. snapshot 패치로 보드 즉시 반영.

@@ -48,5 +48,19 @@ while true; do
     done
   fi
 
+  # ── watchdog: 죽은 worker(탭 사망·worktree 생존·In Progress)를 ≤60s로 자가복구하거나 escalate. ──
+  # 리퍼와 같은 이유로 이 루프(cmux 패널) 안에서 돈다. 진행 중 run(lockdir)은 스킵 — 그 run이 spawn 중일 수 있어 레이스 방지.
+  # 무동작이면 WATCHDOG_QUIET로 조용히(run.log 무한 증식 방지). heal/escalate 액션 로그는 watchdog.sh가 무조건 출력.
+  now=$(date +%s); lastwd=$(cat "$STATE/.last_watchdog" 2>/dev/null || echo 0)
+  if (( now - lastwd >= 60 )); then
+    echo "$now" > "$STATE/.last_watchdog"
+    for CFG in $ROOT/loops/*/config.json; do
+      [[ -f "$CFG" ]] || continue
+      lid="$(field "$CFG" id)"; [[ -z "$lid" ]] && continue
+      [[ -d /tmp/loop-$lid.lockdir ]] && continue
+      WATCHDOG_QUIET=1 "$ROOT/bin/watchdog.sh" "$lid" >> "$ROOT/loops/$lid/state/run.log" 2>&1
+    done
+  fi
+
   sleep 15
 done
