@@ -88,9 +88,14 @@ loopctl start                           # 디스패처
 
 ## 구조
 ```
-bin/        엔진(공통): dispatch·run-once·spawn-orchestrator·spawn-worker·worker-run·render-prompt
-            orchestrator-base.md·worker-base.md (← {{MISSION}}·config 치환) · loop-builder.md
+bin/        엔진(공통):
+            · 코어 파이프라인: dispatch·run-once·spawn-orchestrator·spawn-worker·worker-run·render-prompt (·_common 공통 source·preflight)
+            · 프롬프트 템플릿: orchestrator-base.md·worker-base.md (← {{MISSION}}·config 치환) · loop-builder.md
+            · 신뢰성/정리(결정론적): watchdog(spawn-liveness)·heal-worker·cleanup-terminal(reaper)·cleanup-issue·cleanup-loop
+            · Linear ledger·빌드: linear-move·linear-states · build-loop
+            · notify-bot.mjs  Telegram 원격 브리지 (loopctl bot)
 dashboard-server.mjs / dashboard.html / loopctl
+vendor/     Oat UI 정적 자산 oat.min.{css,js} (유일한 no-build 예외 · 핀 고정)
 skills/create-loop/   create-loop 스킬 (install.sh가 ~/.claude/skills 로 symlink)
 examples/   시작 템플릿 (placeholder)
 loops/      (gitignore) 유저 loop 데이터: <id>/{config.json, mission.md, state/}
