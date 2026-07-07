@@ -135,6 +135,7 @@ function loopStatus(lid, allTabs) {
   return {
     id: lid, name: cfg.name || lid, emoji: cfg.emoji || '🔁', enabled: cfg.enabled !== false,
     repo: cfg.repo || '', linearProjectUrl: cfg.linearProjectUrl || '', maxWorkers: cfg.maxWorkers || 2,
+    delivery: cfg.delivery || 'pr',
     schedule: cfg.schedule || { intervalSec: 3600, startAt: null }, paused: existsSync(`${st}/PAUSED`),
     nextTs, lastRun, counts, issues, feed: f.slice(-40).reverse(),
     attentionCount: issues.filter(i => i.attention).length,
