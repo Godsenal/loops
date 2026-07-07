@@ -76,15 +76,22 @@ if [[ -n "$CMUX" ]]; then
     TAB_REFS[$sl]+="$ref "; TAB_ID[$sl]="$id"; (( tab_n++ ))
   done < <("$CMUX" list-workspaces 2>/dev/null | grep -iE "(🛠|↩)[[:space:]]+${LOOP}[[:space:]]")
 fi
-# 3c) (pr 모드) 브랜치에 PR이 **하나라도**(open/merged/closed) 있으면 = 배달됨 → 유령 회수/잔재 정리 대상 아님.
-#    ⚠️ open만 보면 안 된다: 사람이 머지한 직후(merged)엔 Linear가 아직 started인데 open PR이 없어 → 완료된 이슈를 Backlog로 오회수한다.
-#    direct는 PR 없음 → 스킵. gh는 cwd로 레포를 잡는다.
-typeset -A DELIVERED
+# 3c) (pr 모드) 브랜치별 최신 PR 상태 조회. DELIVERED=PR 존재(유령 회수 veto용), 그리고 최신 PR이 **MERGED면 터미널로 승격**.
+#    ⚠️ 왜 필요한가: 사람이 PR을 머지해도 Linear→Done 전환은 LLM 오케스트레이터 STEP1(시간당 1회, 워커가 In Review로 안 옮겼으면 놓침)에
+#       의존한다 → 그때까지 리퍼가 "종료"로 못 보고 idle 워커 탭·worktree가 계속 쌓인다("완료됐는데 탭 안 닫힘"의 근원).
+#       머지는 코드가 base에 반영된 **결정적 완료 신호**이므로 Linear 리컨사일을 기다리지 않고 여기서 바로 회수한다.
+#    CLOSED(머지 없이 닫힘)는 승격하지 않는다 — 브랜치 재사용 시 이전 attempt의 닫힌 PR이 최신으로 잡혀 현재 작업 탭을 오회수할 위험이 있어
+#       기존 오케스트레이터 CLOSED→Canceled 경로에 맡긴다. MERGED는 재작업이 사실상 없어 그 위험이 없다.
+#    gh는 최신순 → 브랜치별 첫(=최신) PR만 채택(reopen 대비). direct는 PR 없음 → 스킵. gh는 cwd로 레포를 잡는다.
+typeset -A DELIVERED PRSTATE
 if [[ "$DELIVERY" != "direct" && -n "$GH" && -n "$REPO" ]]; then
-  while IFS= read -r br; do
+  while IFS=$'\t' read -r br st; do
     [[ "$br" == "${BRPFX}/"* ]] || continue
-    DELIVERED[$(id2slug "${br#${BRPFX}/}")]=1
-  done < <(cd "$REPO" && "$GH" pr list --search "head:${BRPFX}/" --state all --json headRefName --limit 200 -q '.[].headRefName' 2>/dev/null)
+    sl="$(id2slug "${br#${BRPFX}/}")"
+    DELIVERED[$sl]=1
+    [[ -z "${PRSTATE[$sl]:-}" ]] && PRSTATE[$sl]="$st"
+  done < <(cd "$REPO" && "$GH" pr list --search "head:${BRPFX}/" --state all --json headRefName,state --limit 200 -q '.[] | .headRefName + "\t" + .state' 2>/dev/null)
+  for sl in ${(k)PRSTATE}; do [[ "${PRSTATE[$sl]}" == "MERGED" ]] && TERMINAL[$sl]=1; done
 fi
 
 # 요약줄은 무동작이어도 매번 찍힌다 → 60s reaper(CLEANUP_QUIET=1)에선 억제(run.log 무한 증식 방지). 실제 정리 액션 로그는 아래에서 무조건 출력.
