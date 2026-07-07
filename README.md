@@ -43,6 +43,8 @@ loopctl start                           # 디스패처
 ```
 종료 상태(Linear `completed`/`canceled`) 이슈의 worktree·cmux 탭·브랜치는 오케스트레이터 run마다 **자동 정리**된다(대시보드 `🧹 정리` 버튼·위 `loopctl cleanup`으로 수동도 가능). 진행 중 worktree는 `claude --resume` 위해 보존.
 
+**멈춤·유령 자가복구(≤60s, 결정론적).** `dispatch.sh`가 리퍼와 함께 두 루프를 돌린다 — in-flight 기준은 **Linear `started`**(항상 신선; snapshot에 의존 안 함), worker 탭 생존은 신뢰 가능(cmux 탭은 명령 종료 시 auto-close). 죽은 worker는 worktree가 남았으면 `heal-worker`가 그 자리에서 resume, worktree 없이 Linear만 `started`인 **유령**(in-flight를 붙잡아 cap을 막아 "루프가 조용히 멈추는" 주범)은 리퍼가 `linear-move`로 Backlog에 자동 복귀시켜 슬롯을 푼다. 탭은 살아있으나 화면이 5분 이상 정지한 worker는 **wedged**로 대시보드에 표면화(자동 kill은 안 함). N회 자가복구 실패는 🧟 stuck으로 사람에게 넘긴다. **머지·배포·force-push·Linear 취소는 어느 경로에서도 없음**(Backlog 이동만).
+
 ### 폰에서 다 돌리기 — Telegram 봇
 컴퓨터 앞에 없어도 폰 하나로 **전부** 된다 — 활성 loop·진행 중 작업을 보고, 사람 판단(human-gate)·PR 준비·CI 실패 push를 받고, 그 자리에서 결정·취소·정리·재실행·디스패처 제어까지. 엔진은 그대로(봇은 대시보드 `/api/status`·`/api/control`만 호출 — **머지/배포/force-push는 여전히 안 함, 머지는 사람**).
 

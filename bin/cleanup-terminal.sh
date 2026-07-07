@@ -7,19 +7,27 @@
 #   • 종료(TERMINAL)          → cleanup-issue.sh (탭+worktree+브랜치, worktree 없어도 탭 닫음).
 #   • 비종료 & worktree 소멸  → 죽은 고아 탭(cwd 사라져 resume 불가) → 탭만 닫음(브랜치는 PR 살아있을 수 있어 보존).
 #   • 비종료 & worktree 존재  → In Progress/Review → 보존(claude --resume 용).
-# usage: cleanup-terminal.sh <loop-id>   (env: CLEANUP_DRY_RUN=1 → 삭제 없이 정리 대상만 출력)
+# ── 추가(Linear 신선할 때만) — in-flight를 붙잡아 cap을 막던 유령/잔재를 결정론적으로 회수(구버전은 LLM orchestrator STEP1에만 의존해 새던 곳):
+#   • started 유령(탭·worktree·PR(any state) 전부 없음) → linear-move로 Backlog 복귀(슬롯 해제). watchdog이 over-cap spawn 대신 여기로 넘긴다.
+#   • Backlog 잔재 worktree(죽은 worker가 되돌려진 뒤 방치, 탭·PR 없음) → cleanup-issue로 worktree+브랜치 회수.
+# ⚠️ Backlog 이동은 머지/취소가 아니다 — no-merge/no-cancel 원칙 불변. force-push/배포 없음.
+# usage: cleanup-terminal.sh <loop-id>   (env: CLEANUP_DRY_RUN=1 → 삭제/이동 없이 대상만 출력)
 set -u
 source "${0:A:h}/_common.sh"
 LOOP="${1:?usage: cleanup-terminal.sh <loop-id>}"
 ROOT="$LOOPS_HOME"; LOOPDIR=$ROOT/loops/$LOOP; STATE=$LOOPDIR/state; CFG=$LOOPDIR/config.json
 [[ -f "$CFG" ]] || { echo "loop '$LOOP' config 없음 — skip"; exit 0; }
 REPO="$(cfgval "$CFG" repo)"; PREFIX="$(cfgval "$CFG" worktreePrefix)"; PID="$(cfgval "$CFG" linearProjectId)"
-CMUX="$CMUX_BIN"
+BRPFX="$(cfgval "$CFG" branchPrefix)"; [[ -z "$BRPFX" ]] && BRPFX="loop-$LOOP"
+DELIVERY="$(cfgval "$CFG" delivery)"; [[ -z "$DELIVERY" ]] && DELIVERY=pr
+CMUX="$CMUX_BIN"; GH="$GH_BIN"
 [[ -z "$REPO" || -z "$PREFIX" ]] && { echo "repo/worktreePrefix 없음 — skip"; exit 0; }
 
-# slug→종료여부(TERMINAL), slug→이슈id(SLUGID). slug는 spawn-worker.sh의 id→slug 규칙과 동일.
-typeset -A TERMINAL SLUGID
+# slug→종료여부(TERMINAL)/시작(STARTED)/백로그(BACKLOG), slug→이슈id(SLUGID). slug는 spawn-worker.sh의 id→slug 규칙과 동일.
+typeset -A TERMINAL STARTED BACKLOG SLUGID
 id2slug(){ local s="${1:l}"; s="${s//[^a-z0-9]/-}"; print -r -- "${s%-}"; }
+# liveness.json에서 escalated 여부(사람 대기) — 유령 회수 시 escalation을 리셋하지 않기 위한 veto.
+lv_escalated(){ node -e 'const fs=require("fs"),[f,id]=process.argv.slice(1);let o={};try{o=JSON.parse(fs.readFileSync(f))}catch{}process.stdout.write((o[id]&&o[id].escalated)?"true":"")' "$STATE/liveness.json" "$1"; }
 
 # 1) 권위 신호 — Linear statusType. (LINEAR_API_KEY는 loops.env에 export 안 돼 있어 node 자식에 명시 전달.)
 #    자식 stderr를 버리지 않고 캡처 — 만료/무효 키·네트워크 장애로 인한 조용한 snapshot 강등을 로그에 노출한다.
@@ -30,6 +38,8 @@ if [[ -n "$PID" && -n "${LINEAR_API_KEY:-}" ]]; then
     [[ -z "$id" ]] && continue
     sl="$(id2slug "$id")"; SLUGID[$sl]="$id"; (( linear_n++ ))
     [[ "$t" == "completed" || "$t" == "canceled" ]] && TERMINAL[$sl]=1
+    [[ "$t" == "started" ]] && STARTED[$sl]=1
+    [[ "$t" == "backlog" ]] && BACKLOG[$sl]=1
   done < <(LINEAR_API_KEY="${LINEAR_API_KEY:-}" node "$ROOT/bin/linear-states.mjs" "$PID" 2>"$lserr")
   [[ -s "$lserr" ]] && echo "⚠️ cleanup-terminal $LOOP — $(<"$lserr")" >&2
   rm -f "$lserr"
@@ -66,6 +76,16 @@ if [[ -n "$CMUX" ]]; then
     TAB_REFS[$sl]+="$ref "; TAB_ID[$sl]="$id"; (( tab_n++ ))
   done < <("$CMUX" list-workspaces 2>/dev/null | grep -iE "(🛠|↩)[[:space:]]+${LOOP}[[:space:]]")
 fi
+# 3c) (pr 모드) 브랜치에 PR이 **하나라도**(open/merged/closed) 있으면 = 배달됨 → 유령 회수/잔재 정리 대상 아님.
+#    ⚠️ open만 보면 안 된다: 사람이 머지한 직후(merged)엔 Linear가 아직 started인데 open PR이 없어 → 완료된 이슈를 Backlog로 오회수한다.
+#    direct는 PR 없음 → 스킵. gh는 cwd로 레포를 잡는다.
+typeset -A DELIVERED
+if [[ "$DELIVERY" != "direct" && -n "$GH" && -n "$REPO" ]]; then
+  while IFS= read -r br; do
+    [[ "$br" == "${BRPFX}/"* ]] || continue
+    DELIVERED[$(id2slug "${br#${BRPFX}/}")]=1
+  done < <(cd "$REPO" && "$GH" pr list --search "head:${BRPFX}/" --state all --json headRefName --limit 200 -q '.[].headRefName' 2>/dev/null)
+fi
 
 # 요약줄은 무동작이어도 매번 찍힌다 → 60s reaper(CLEANUP_QUIET=1)에선 억제(run.log 무한 증식 방지). 실제 정리 액션 로그는 아래에서 무조건 출력.
 [[ -z "${CLEANUP_QUIET:-}" ]] && echo "🧹 cleanup-terminal $LOOP — Linear ${linear_n}건 조회, 종료 후보 ${#TERMINAL}개, worker 탭 ${tab_n}개"
@@ -89,3 +109,30 @@ for sl in $ALLSLUGS; do
   fi
   # else: 비종료 & worktree 존재 → 진행/리뷰 중 → 보존(무동작).
 done
+
+# ⚠️ 아래 4)·5)는 Linear 상태를 바꾸거나(=4, Backlog 이동) worktree를 지운다(=5) → Linear가 신선(linear_n>0)할 때만.
+#    snapshot 폴백(만료/오프라인)일 땐 오판 위험이 커서 아예 건너뛴다(보수적). lockdir 게이트가 spawn 레이스도 막는다.
+if (( linear_n > 0 )); then
+  # 4) started 유령 회수 — Linear started인데 worktree·worker 탭·PR(any state) 전부 없음 = 진행분 없이 in-flight 슬롯만 붙잡는 유령.
+  #    linear-move로 Backlog 복귀 → 슬롯 해제 → orchestrator가 cap·우선순위 안에서 재spawn. (watchdog이 spawn 대신 리퍼로 넘긴 케이스.)
+  #    escalated(사람 대기)는 건너뜀 — 사람이 볼 stuck을 리셋하지 않게. 머지/취소 아님(Backlog 이동만) — no-merge 원칙 불변.
+  for sl in ${(k)STARTED}; do
+    [[ -n "${WT_EXISTS[$sl]:-}" || -n "${TAB_REFS[$sl]:-}" || -n "${DELIVERED[$sl]:-}" ]] && continue
+    id="${SLUGID[$sl]:-${sl:u}}"
+    [[ "$(lv_escalated "$id")" == "true" ]] && continue
+    if [[ -n "${CLEANUP_DRY_RUN:-}" ]]; then echo "  [dry-run] ghost started(탭·worktree·PR 없음) → linear-move backlog $id"; continue; fi
+    out="$(LINEAR_API_KEY="${LINEAR_API_KEY:-}" node "$ROOT/bin/linear-move.mjs" "$id" backlog 2>&1)"
+    ts=$(date '+%s'); print -r -- "{\"ts\":$ts,\"type\":\"worker\",\"event\":\"ghost-reclaimed\",\"issue\":\"$id\"}" >> "$STATE/runs.jsonl"
+    echo "reclaimed ghost $LOOP/$id → Backlog (in-flight 슬롯 해제) — $out"
+  done
+
+  # 5) Backlog 잔재 worktree 회수 — Linear backlog인데 worktree만 남음(죽은 worker가 Backlog로 되돌려진 뒤 방치된 잔재).
+  #    CLAUDE.md 보존 스코프는 In Progress/In Review 뿐 → Backlog worktree는 회수 대상. live 탭 없고(작업 중 아님) open PR 없을 때만.
+  #    재spawn 때 어차피 spawn-worker가 force-remove하므로 안전 — 사이만 깔끔히 정리.
+  for sl in ${(k)BACKLOG}; do
+    [[ -z "${WT_EXISTS[$sl]:-}" ]] && continue
+    [[ -n "${TAB_REFS[$sl]:-}" || -n "${DELIVERED[$sl]:-}" ]] && continue
+    id="${SLUGID[$sl]:-${sl:u}}"
+    if [[ -n "${CLEANUP_DRY_RUN:-}" ]]; then echo "  [dry-run] backlog 잔재 worktree → clean $id (${PREFIX}-$sl)"; else "$ROOT/bin/cleanup-issue.sh" "$LOOP" "$id"; fi
+  done
+fi

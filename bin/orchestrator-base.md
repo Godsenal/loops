@@ -32,7 +32,11 @@ STEP 1 — 열린 작업 진행 (중복 방지)
   - **`state == MERGED` (사람이 머지함) → Linear 이슈를 `Done`으로 이동** + "✅ 머지됨(<url>) → Done" 코멘트. 이러면 in-flight에서 빠져 cap이 풀린다. (worker 탭·worktree는 네가 건드리지 말 것 — run 후 `run-once.sh`가 종료 상태로 보고 자동 정리한다.)
   - **`state == CLOSED`(머지 없이 닫힘) → Linear 이슈를 `Canceled`로 이동** + "⚠️ PR #N이 머지 없이 닫힘 → Canceled (재개하려면 이슈를 Backlog로 옮기세요)" 코멘트. 사람이 일부러 닫은 것이므로 자동 재시도(Backlog 복귀·재spawn) 하지 말 것 — Canceled는 in-flight에서 빠져 cap을 푼다. 사용자가 다시 원하면 직접 Backlog로 옮긴다.
   - `state == OPEN`: CI/리뷰 확인 → 이슈에 1줄 코멘트. CI 실패가 명백히 기계적이면 그 브랜치에서 고쳐 push. green+approved면 "✅ 머지 준비됨" 코멘트만. **절대 머지 금지.**
-- 죽은 In Progress(PR도 worker 탭도 없음) → Backlog로 되돌리고 코멘트. **단 예외**: `{{STATE_DIR}}/liveness.json`에서 그 이슈에 `"escalated": true`가 있으면 **되돌리지 말고 In Progress 그대로 둔다** — 워치독(deterministic)이 N회 자가복구를 시도했으나 계속 실패해 사람에게 넘긴 상태다(대시보드에 🧟 stuck 표시·Telegram 알림 발송됨). 여기서 Backlog로 되돌려 재spawn하면 escalation이 리셋되고 무한 churn이 재개된다. 사람이 대시보드에서 ↻재시도(=liveness 리셋)하거나 🗑버리기할 때까지 손대지 말 것. (liveness.json 없거나 escalated가 아니면 기존대로 Backlog 복귀.)
+- 죽은 In Progress(worker 탭 없음)는 **이제 결정론적 쉘이 담당한다 — 너는 원칙적으로 손대지 마라.** run 밖 ≤60s 케이던스로:
+  - worktree가 남아있으면(진행분 있음) 워치독이 그 worktree에서 resume 재기동(heal)한다.
+  - worktree가 없으면(진행분 없는 유령) 리퍼(cleanup-terminal)가 `linear-move`로 Backlog에 자동 복귀시켜 in-flight 슬롯을 푼다.
+  이 둘이 in-flight를 붙잡아 cap을 막던 걸 자동으로 없앤다. **`{{STATE_DIR}}/liveness.json`에 그 이슈 엔트리가 있으면(attempts/wedged/escalated 무엇이든) 워치독이 처리 중이므로 절대 손대지 말 것** — 특히 `"escalated": true`(🧟 자가복구 N회 실패 → 사람 대기, 대시보드/Telegram 표면화됨)는 Backlog로 되돌리면 escalation이 리셋돼 무한 churn이 재개된다. 사람이 ↻재시도/🗑버리기 할 때까지 둔다.
+  - **백스톱(예외적)**: liveness.json에 엔트리가 전혀 없고 worktree·탭·PR 모두 없이 오래 방치된 게 확실하면(리퍼가 놓친 경우) 그때만 Backlog로 되돌리고 코멘트.
 
 **`LOOP_MODE == reconcile` 면 여기서 위 머지정리만 하고 STEP 2·3 을 건너뛰어 곧장 STEP 4 로 간다.**
 

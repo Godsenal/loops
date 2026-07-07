@@ -2,5 +2,6 @@
 /loops/
 /state/
 /loops.env
+/notify.json
 *.log
 .DS_Store
