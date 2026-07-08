@@ -16,7 +16,7 @@ RUNNER=$ROOT/bin/worker-run.sh
 [[ -f "$CFG" ]] || { echo "loop '$LOOP' config 없음 — skip"; exit 0; }
 REPO="$(cfgval "$CFG" repo)"; PREFIX="$(cfgval "$CFG" worktreePrefix)"
 
-slug="$(echo "$ID" | tr '[:upper:]' '[:lower:]' | tr -c 'a-z0-9' '-' | sed 's/-*$//')"
+slug="$(slugof "$ID")"
 WT="${PREFIX}-${slug}"
 
 # 이미 살아있는 worker/resume 탭(🛠|↩ <loop> <id>)이 있으면 재기동 불필요 — 중복 방지.

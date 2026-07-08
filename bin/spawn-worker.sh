@@ -11,7 +11,7 @@ RUNNER=$ROOT/bin/worker-run.sh
 REPO="$(cfgval "$CFG" repo)"; BASEREF="$(cfgval "$CFG" baseRef)"; [[ -z "$BASEREF" ]] && BASEREF=origin/develop
 PREFIX="$(cfgval "$CFG" worktreePrefix)"; BRPFX="$(cfgval "$CFG" branchPrefix)"; [[ -z "$BRPFX" ]] && BRPFX="loop-$LOOP"
 
-slug="$(echo "$ID" | tr '[:upper:]' '[:lower:]' | tr -c 'a-z0-9' '-' | sed 's/-*$//')"
+slug="$(slugof "$ID")"
 WT="${PREFIX}-${slug}"; BR="${BRPFX}/${slug}"
 git -C "$REPO" fetch origin -q
 git -C "$REPO" worktree remove --force "$WT" 2>/dev/null

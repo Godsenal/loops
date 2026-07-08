@@ -11,8 +11,8 @@ CMUX="$CMUX_BIN"
 REPO="$(cfgval "$CFG" repo)"
 PREFIX="$(cfgval "$CFG" worktreePrefix)"; BRPFX="$(cfgval "$CFG" branchPrefix)"; [[ -z "$BRPFX" ]] && BRPFX="loop-$LOOP"
 
-# slug/WT/BR 산출 — spawn-worker.sh 와 **동일** 로직 (재사용).
-slug="$(echo "$ID" | tr '[:upper:]' '[:lower:]' | tr -c 'a-z0-9' '-' | sed 's/-*$//')"
+# slug/WT/BR 산출 — _common.sh의 slugof()가 단일 원천(spawn-worker.sh와 동일 규칙).
+slug="$(slugof "$ID")"
 WT="${PREFIX}-${slug}"; BR="${BRPFX}/${slug}"
 
 did=0

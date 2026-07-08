@@ -23,9 +23,8 @@ DELIVERY="$(cfgval "$CFG" delivery)"; [[ -z "$DELIVERY" ]] && DELIVERY=pr
 CMUX="$CMUX_BIN"; GH="$GH_BIN"
 [[ -z "$REPO" || -z "$PREFIX" ]] && { echo "repo/worktreePrefix 없음 — skip"; exit 0; }
 
-# slug→종료여부(TERMINAL)/시작(STARTED)/백로그(BACKLOG), slug→이슈id(SLUGID). slug는 spawn-worker.sh의 id→slug 규칙과 동일.
+# slug→종료여부(TERMINAL)/시작(STARTED)/백로그(BACKLOG), slug→이슈id(SLUGID). slug는 _common.sh의 slugof()(spawn 정본)로 산출.
 typeset -A TERMINAL STARTED BACKLOG SLUGID
-id2slug(){ local s="${1:l}"; s="${s//[^a-z0-9]/-}"; print -r -- "${s%-}"; }
 # liveness.json에서 escalated 여부(사람 대기) — 유령 회수 시 escalation을 리셋하지 않기 위한 veto.
 lv_escalated(){ node -e 'const fs=require("fs"),[f,id]=process.argv.slice(1);let o={};try{o=JSON.parse(fs.readFileSync(f))}catch{}process.stdout.write((o[id]&&o[id].escalated)?"true":"")' "$STATE/liveness.json" "$1"; }
 
@@ -36,7 +35,7 @@ if [[ -n "$PID" && -n "${LINEAR_API_KEY:-}" ]]; then
   lserr="$(mktemp)"
   while IFS=$'\t' read -r id t; do
     [[ -z "$id" ]] && continue
-    sl="$(id2slug "$id")"; SLUGID[$sl]="$id"; (( linear_n++ ))
+    sl="$(slugof "$id")"; SLUGID[$sl]="$id"; (( linear_n++ ))
     [[ "$t" == "completed" || "$t" == "canceled" ]] && TERMINAL[$sl]=1
     [[ "$t" == "started" ]] && STARTED[$sl]=1
     [[ "$t" == "backlog" ]] && BACKLOG[$sl]=1
@@ -72,7 +71,7 @@ if [[ -n "$CMUX" ]]; then
     ref="$(print -r -- "$line" | grep -oE 'workspace:[0-9]+' | head -1)"
     id="$(print -r -- "$line" | awk '{print $NF}')"   # 제목 "🛠 <loop> <ID>" → ID가 마지막 토큰
     [[ -z "$ref" || -z "$id" ]] && continue
-    sl="$(id2slug "$id")"
+    sl="$(slugof "$id")"
     TAB_REFS[$sl]+="$ref "; TAB_ID[$sl]="$id"; (( tab_n++ ))
   done < <("$CMUX" list-workspaces 2>/dev/null | grep -iE "(🛠|↩)[[:space:]]+${LOOP}[[:space:]]")
 fi
@@ -87,7 +86,7 @@ typeset -A DELIVERED PRSTATE
 if [[ "$DELIVERY" != "direct" && -n "$GH" && -n "$REPO" ]]; then
   while IFS=$'\t' read -r br st; do
     [[ "$br" == "${BRPFX}/"* ]] || continue
-    sl="$(id2slug "${br#${BRPFX}/}")"
+    sl="$(slugof "${br#${BRPFX}/}")"
     DELIVERED[$sl]=1
     [[ -z "${PRSTATE[$sl]:-}" ]] && PRSTATE[$sl]="$st"
   done < <(cd "$REPO" && "$GH" pr list --search "head:${BRPFX}/" --state all --json headRefName,state --limit 200 -q '.[] | .headRefName + "\t" + .state' 2>/dev/null)

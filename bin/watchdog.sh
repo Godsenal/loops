@@ -41,8 +41,6 @@ GRACE=${LOOP_WATCHDOG_GRACE_SEC:-90}
 WEDGE_SEC=${LOOP_WEDGE_SEC:-300}   # 화면이 이 시간 이상 불변이면 wedge로 표면화(진행중 claude는 타이머/스피너로 매초 화면이 변함).
 LIVENESS="$STATE/liveness.json"
 
-id2slug(){ local s="${1:l}"; s="${s//[^a-z0-9]/-}"; print -r -- "${s%-}"; }
-
 # liveness.json 조작 (원자적 read-modify-write, 파싱 실패는 빈 객체로 안전 복구).
 lv_get(){ node -e 'const fs=require("fs"),[f,id,k]=process.argv.slice(1);let o={};try{o=JSON.parse(fs.readFileSync(f))}catch{}const e=o[id]||{};process.stdout.write(e[k]!=null?String(e[k]):"")' "$LIVENESS" "$1" "$2"; }
 lv_set(){ node -e 'const fs=require("fs"),[f,id,p]=process.argv.slice(1);let o={};try{o=JSON.parse(fs.readFileSync(f))}catch{}o[id]=Object.assign({},o[id]||{},JSON.parse(p));fs.writeFileSync(f,JSON.stringify(o))' "$LIVENESS" "$1" "$2"; }
@@ -57,7 +55,7 @@ linear_n=0
 if [[ -n "$PID" && -n "${LINEAR_API_KEY:-}" ]]; then
   while IFS=$'\t' read -r id t; do
     [[ -z "$id" ]] && continue
-    sl="$(id2slug "$id")"; SLUGID[$sl]="$id"; STATE_OF[$sl]="$t"; (( linear_n++ ))
+    sl="$(slugof "$id")"; SLUGID[$sl]="$id"; STATE_OF[$sl]="$t"; (( linear_n++ ))
     [[ "$t" == "started" ]] && STARTED[$sl]=1
     [[ "$t" == "completed" || "$t" == "canceled" ]] && TERMINAL[$sl]=1
   done < <(LINEAR_API_KEY="${LINEAR_API_KEY:-}" node "$ROOT/bin/linear-states.mjs" "$PID" 2>/dev/null)
@@ -81,7 +79,7 @@ if [[ -n "$CMUX" ]]; then
     ref="$(print -r -- "$line" | grep -oE 'workspace:[0-9]+' | head -1)"
     id="$(print -r -- "$line" | awk '{print $NF}')"
     [[ -z "$ref" || -z "$id" ]] && continue
-    TAB_REF[$(id2slug "$id")]="$ref"
+    TAB_REF[$(slugof "$id")]="$ref"
   done < <("$CMUX" list-workspaces 2>/dev/null | grep -iE "(🛠|↩)[[:space:]]+${LOOP}[[:space:]]")
 fi
 
@@ -101,7 +99,7 @@ typeset -A DELIVERED
 if [[ "$DELIVERY" != "direct" && -n "$GH" && -n "$REPO" ]]; then
   while IFS= read -r br; do
     [[ "$br" == "${BRPFX}/"* ]] || continue
-    DELIVERED[$(id2slug "${br#${BRPFX}/}")]=1
+    DELIVERED[$(slugof "${br#${BRPFX}/}")]=1
   done < <(cd "$REPO" && "$GH" pr list --search "head:${BRPFX}/" --state all --json headRefName --limit 200 -q '.[].headRefName' 2>/dev/null)
 fi
 
@@ -165,7 +163,7 @@ done
 if (( linear_n > 0 )); then
   for id in ${(f)"$(lv_keys)"}; do
     [[ -z "$id" ]] && continue
-    [[ -z "${STARTED[$(id2slug "$id")]:-}" ]] && lv_del "$id"
+    [[ -z "${STARTED[$(slugof "$id")]:-}" ]] && lv_del "$id"
   done
 fi
 
