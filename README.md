@@ -93,7 +93,7 @@ bin/        엔진(공통):
             · 프롬프트 템플릿: orchestrator-base.md·worker-base.md (← {{MISSION}}·config 치환) · loop-builder.md
             · 신뢰성/정리(결정론적): watchdog(spawn-liveness)·heal-worker·cleanup-terminal(reaper)·cleanup-issue·cleanup-loop
             · Linear ledger·빌드: linear-move·linear-states · build-loop
-            · notify-bot.mjs  Telegram 원격 브리지 (loopctl bot)
+            · notify-bot.mjs  Telegram 원격 브리지 (loopctl bot) · loops-mcp.mjs  봇 에이전트용 제어 MCP 서버(안전 면만)
 dashboard-server.mjs / dashboard.html / loopctl
 vendor/     Oat UI 정적 자산 oat.min.{css,js} (유일한 no-build 예외 · 핀 고정)
 skills/create-loop/   create-loop 스킬 (install.sh가 ~/.claude/skills 로 symlink)

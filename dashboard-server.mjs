@@ -260,6 +260,26 @@ async function control(a, p) {
       try { await sh(`${ROOT}/bin/cleanup-issue.sh`, [lid, p.issue]); } catch {}   // 탭 닫기 + worktree·브랜치 제거(제목으로 매칭하므로 ref 불필요)
       return { ok: true, out: p.issue + ' → Canceled · 세션 탭·worktree 정리' };
     }
+    case 'create-issue': {   // Linear 이슈 생성 → 루프의 project Backlog. start:true 면 즉시 워커 spawn. (텔레그램 에이전트/향후 대시보드 "+태스크"용)
+      if (!lid) return { ok: false, out: 'no loop' };
+      const cfg = readJSON(cfgPath(lid)); if (!cfg) return { ok: false, out: 'no config' };
+      const pid = cfg.linearProjectId; if (!pid) return { ok: false, out: lid + ' config에 linearProjectId 없음' };
+      const title = (p.title || '').trim(); if (!title) return { ok: false, out: 'title 필요' };
+      let iss;
+      try {
+        // project → team + backlog 상태(최저 position). linear-move.mjs와 동일 패턴.
+        const q = await linearGQL(`query($pid:String!){ project(id:$pid){ teams(first:1){ nodes{ id states(first:50){ nodes{ id type position } } } } } }`, { pid });
+        const team = q?.project?.teams?.nodes?.[0];
+        if (!team) return { ok: false, out: 'project의 team을 못 찾음' };
+        const bl = (team.states?.nodes || []).filter(s => s.type === 'backlog').sort((a, b) => a.position - b.position)[0];
+        const input = { teamId: team.id, projectId: pid, title, description: p.description || '', ...(bl ? { stateId: bl.id } : {}) };
+        const m = await linearGQL(`mutation($in:IssueCreateInput!){ issueCreate(input:$in){ success issue{ id identifier url } } }`, { in: input });
+        iss = m?.issueCreate?.issue;
+        if (!(m?.issueCreate?.success && iss)) return { ok: false, out: 'Linear issueCreate 실패' };
+      } catch (e) { return { ok: false, out: 'Linear: ' + e.message }; }
+      if (p.start) { spawn(`${ROOT}/bin/spawn-worker.sh`, [lid, iss.identifier], { stdio: 'ignore' }); setTimeout(activateCmux, 8000); }
+      return { ok: true, out: `${iss.identifier} 생성${p.start ? ' + 워커 시작' : ' (Backlog)'}`, identifier: iss.identifier, url: iss.url };
+    }
     case 'set-linear-key': {   // UI에서 Linear 개인키 입력 → 런타임 즉시 적용 + loops.env 영속화 (값은 어디에도 되돌려주지 않음)
       const key = (p.key || '').trim();
       if (!key) return { ok: false, out: '키가 비었음' };
