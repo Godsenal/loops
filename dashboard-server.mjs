@@ -26,6 +26,8 @@ const readText = (p) => { try { return readFileSync(p, 'utf8'); } catch { return
 const readJSON = (p) => { try { return JSON.parse(readFileSync(p, 'utf8')); } catch { return null; } };
 const pidAlive = (pid) => { try { process.kill(pid, 0); return true; } catch { return false; } };
 const slugOf = (id) => String(id).toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/-+$/, '');
+// ⚠️ worktree 경로 규칙 = bin/spawn-worker.sh의 WT="${PREFIX}-${slug}" 와 일치해야 함(source of truth). 이미 파싱된 cfg를 받는 순수 함수 — config 재-read 없음.
+const wtPath = (cfg, id) => `${cfg.worktreePrefix || ''}-${slugOf(id)}`;
 let LINEAR_KEY = ENV.LINEAR_API_KEY || process.env.LINEAR_API_KEY || '';   // 런타임 보유 — UI에서 즉시 갱신, loops.env에 영속화. status는 boolean만 노출.
 function setEnvVar(k, v) { const p = `${ROOT}/loops.env`; let t = readText(p); const ln = `${k}=${v}`; const re = new RegExp('^' + k + '=.*$', 'm'); t = re.test(t) ? t.replace(re, ln) : (t.replace(/\n?$/, '\n') + ln + '\n'); writeFileSync(p, t); }
 
@@ -115,7 +117,7 @@ function loopStatus(lid, allTabs) {
     const stalled = i.state === 'In Progress' && !alive && !live;
     return {
       ...i, state, snapState: i.state, pr: (live && live.url) || i.pr || null,
-      workspace: ws, alive, working, stalled, hasWorktree: existsSync(`${cfg.worktreePrefix || ''}-${slugOf(i.id)}`),
+      workspace: ws, alive, working, stalled, hasWorktree: existsSync(wtPath(cfg, i.id)),
       merged: live ? live.merged : undefined, prState: live ? live.state : undefined, checks: live ? live.checks : undefined,
       ci: live ? live.ci : undefined, review: live ? live.review : undefined, reviewCount: live ? live.reviewCount : undefined,
       commentCount: live ? live.commentCount : undefined, gateResolved,
@@ -154,7 +156,7 @@ function sh(cmd, args) { return new Promise(r => execFile(cmd, args, { timeout: 
 function activateCmux() { try { execFile('osascript', ['-e', `tell application id "${CMUX_BUNDLE}" to activate`], () => {}); } catch {} }
 function reorderBottom(ref) { try { const n = execFileSync(CMUX, ['list-workspaces'], { encoding: 'utf8', timeout: 4000 }).split('\n').filter(l => /workspace:\d+/.test(l)).length; execFile(CMUX, ['reorder-workspace', '--workspace', ref, '--index', String(n)], () => {}); } catch {} }
 function cfgPath(lid) { return `${LOOPS}/${lid}/config.json`; }
-function worktreeOf(lid, id) { const cfg = readJSON(cfgPath(lid)) || {}; return `${cfg.worktreePrefix || ''}-${slugOf(id)}`; }
+function worktreeOf(lid, id) { const cfg = readJSON(cfgPath(lid)) || {}; return wtPath(cfg, id); }
 function clearNextFire(lid) { try { execFile('/bin/rm', ['-f', `${LOOPS}/${lid}/state/next_fire`], () => {}); } catch {} }
 
 // Linear GraphQL (Node 내장 https, 의존성 0). LINEAR_API_KEY=loops.env. 이슈 버리기(→Canceled)용.
