@@ -48,6 +48,21 @@ lv_put(){ node -e 'const fs=require("fs"),[f,id,p]=process.argv.slice(1);let o={
 lv_del(){ node -e 'const fs=require("fs"),[f,id]=process.argv.slice(1);let o={};try{o=JSON.parse(fs.readFileSync(f))}catch{}if(o[id]!=null){delete o[id];fs.writeFileSync(f,JSON.stringify(o))}' "$LIVENESS" "$1"; }
 lv_keys(){ node -e 'const fs=require("fs");let o={};try{o=JSON.parse(fs.readFileSync(process.argv[1]))}catch{}process.stdout.write(Object.keys(o).join("\n"))' "$LIVENESS"; }
 
+# 죽은 껍데기 탭 감지·폐기 (cmux 재시작 세션복원 등): worker-run이 남긴 pidfile의 프로세스가 죽었으면 그 탭은
+# 타이틀(🛠|↩)만 남은 빈 쉘이다 — 산 것으로 오인하면 wedged 오탐 + heal 차단(GOD-28), 그리고 상주 monitor 도입 후엔
+# DELIVERED(In Review) 이슈의 시체 탭이 rework/heal의 live-탭 dedup을 영구 차단한다 → DELIVERED 분기에서도 걷어낸다.
+# pidfile 없는 탭(구버전 워커·수동 resume)은 판정하지 않는다(보수적). 반환 0 = 시체를 닫음, 1 = 대상 아님/살아있음.
+close_if_corpse(){ # $1=tab-ref $2=issue-id
+  local ref="$1" id="$2" pidf="$STATE/live/$2.pid"
+  [[ -n "$ref" && -f "$pidf" ]] || return 1
+  kill -0 "$(cat "$pidf" 2>/dev/null)" 2>/dev/null && return 1
+  "$CMUX" close-workspace --workspace "$ref" >/dev/null 2>&1
+  rm -f "$pidf"
+  echo "💀 watchdog $LOOP/$id — 탭은 있으나 worker 프로세스 죽음(cmux 재시작 복원 탭?) → 탭 닫음"
+  print -r -- "{\"ts\":$now,\"type\":\"worker\",\"event\":\"dead-tab-closed\",\"issue\":\"$id\"}" >> "$STATE/runs.jsonl"
+  return 0
+}
+
 # 1) Linear 권위 상태 — slug→statusType, slug→id. "started"(In Progress ∪ In Review)가 in-flight 집합.
 #    (LINEAR_API_KEY는 loops.env에 export 안 돼 있어 node 자식에 명시 전달. cleanup-terminal.sh와 동일 패턴.)
 typeset -A STATE_OF SLUGID STARTED TERMINAL
@@ -121,21 +136,15 @@ for sl in ${(k)STARTED}; do
   fi
   if [[ -n "${DELIVERED[$sl]:-}" ]]; then
     # (pr 모드) 브랜치에 PR 존재(배달됨: In Review/Done대기/Canceled대기) → 소관 아님. **탭 유무 무관** — 워커가 PR 열고
-    # idle 상태로 탭이 살아있어도, 사람이 머지한 직후여도 wedge/heal로 오탐하면 안 되므로 여기서 먼저 걸러낸다.
+    # 상주 monitor로 탭이 살아있어도, 사람이 머지한 직후여도 wedge/heal로 오탐하면 안 되므로 여기서 먼저 걸러낸다.
+    # 단 시체 탭만은 여기서도 걷는다 — 안 걷으면 rework/heal의 live-탭 dedup이 영구 차단돼 새 피드백이 처리되지 않는다.
+    close_if_corpse "${TAB_REF[$sl]:-}" "$id"
     lv_del "$id"; (( cleared++ )); continue
   fi
   ref="${TAB_REF[$sl]:-}"
   if [[ -n "$ref" ]]; then
-    # ── 죽은 껍데기 탭 감지 (cmux 재시작 세션복원 등): worker-run이 남긴 pidfile의 프로세스가 죽었으면
-    #    이 탭은 타이틀(🛠|↩)만 남은 빈 쉘이다 — 산 것으로 오인하면 wedged 오탐 + heal 차단(GOD-28 사고).
-    #    탭을 닫고 pidfile을 걷은 뒤 이번 패스는 넘긴다 → 다음 패스(≤60s)에 "탭 없음+worktree 있음" 정상 경로로 heal.
-    #    pidfile이 없는 탭(구버전 워커·수동 resume)은 이 검사를 건너뛴다 — 오판으로 산 탭을 닫지 않게 보수적으로.
-    pidf="$STATE/live/$id.pid"
-    if [[ -f "$pidf" ]] && ! kill -0 "$(cat "$pidf" 2>/dev/null)" 2>/dev/null; then
-      "$CMUX" close-workspace --workspace "$ref" >/dev/null 2>&1
-      rm -f "$pidf"
-      echo "💀 watchdog $LOOP/$id — 탭은 있으나 worker 프로세스 죽음(cmux 재시작 복원 탭?) → 탭 닫음, 다음 패스에 heal 판정"
-      print -r -- "{\"ts\":$now,\"type\":\"worker\",\"event\":\"dead-tab-closed\",\"issue\":\"$id\"}" >> "$STATE/runs.jsonl"
+    # ── 죽은 껍데기 탭 감지 → 닫고 이번 패스는 넘긴다 → 다음 패스(≤60s)에 "탭 없음+worktree 있음" 정상 경로로 heal.
+    if close_if_corpse "$ref" "$id"; then
       (( waiting++ )); continue
     fi
     # ── 탭 살아있음 → wedge(화면 정지) 검사 ──

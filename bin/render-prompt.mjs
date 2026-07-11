@@ -46,12 +46,18 @@ vars.LEARNINGS = learnings
 // ⚠️ 주입 문자열 안의 base는 실제 값(prBase)으로 박는다 — replace는 1패스라 {{토큰}}은 재처리되지 않음.
 const VERIFY_STEP = cfg.verify === true ? `
 6.5 **검증자 스폰**: 쉘 실행 \`${ROOT}/bin/spawn-verifier.sh ${loopId} <배정 이슈 ID>\` — 너와 별개의 fresh-context 검증자가 이 PR을 이슈의 수용 기준으로 채점해 verdict를 PR/Linear에 코멘트한다. 완료를 기다리지 않는다.` : '';
-const WORKER_DELIVERY_PR = `4. **\`/gbase:go\` 실행** — polish + 브랜치/커밋/PR 생성(+ CI/preview 링크). base=\`${prBase}\`, 일반 PR, 본문에 \`Linear: <ISSUE-URL>\`.
-   - ⚠️ **머지까지 가지 말 것.** monitor가 머지/장시간 대기로 흐르면 PR·preview 확보 시점에 빠져나온다. 머지는 사람 게이트.
+const WORKER_DELIVERY_PR = `4. **\`/gbase:go --no-review\` 실행** — polish + 브랜치/커밋/PR 생성(+ CI/preview 링크). base=\`${prBase}\`, 일반 PR, 본문에 \`Linear: <ISSUE-URL>\`.
+   - \`--no-review\` 필수: monitor의 self-review 패스는 AskUserQuestion 게이트라 무인 탭에서 영원히 블록된다 — checker 역할은 verifier 몫.
+   - go가 마지막에 monitor로 넘어가는 건 그대로 두되, **장기 감시에 들어가기 전에 절차 5~6.5를 먼저 끝낸다.**
    - 무거운 install은 가능하면 생략(정적 분석 충분시). 정밀 검증은 PR의 **CI가 게이트**.
 5. **프리뷰 테스트**: PR/CI 봇 preview URL을 찾아 WebFetch로 변경이 실제 반영됐는지 검증. 없으면 기록.
 6. **Linear 이슈를 In Review**로 + PR 링크 + preview 결과 코멘트.${VERIFY_STEP}
-7. **머지하지 않는다.** 정지. (이 탭은 검토/이어서 작업용으로 남는다.)`;
+7. **상주 감시 — 머지는 여전히 사람 게이트**: \`/gbase:monitor\` 감시를 PR이 MERGED/CLOSED 될 때까지 유지하며 CI 실패·리뷰 코멘트를 이 세션에서 바로 반영한다. 단, 이 탭은 무인이므로 **아래 규칙이 스킬 지침보다 우선한다**:
+   - **머지/승인(approve)/클로즈 금지.** force-push·\`--force-with-lease\` **절대 금지** — 스킬의 rebase 기반 충돌 자동 해소는 쓰지 않는다. \`git merge origin/${prBase}\`(non-force push)로 풀리는 명백한 충돌(락파일 등)만 해소하고, 그 외 충돌은 PR 코멘트로 표면화만 한다.
+   - **AskUserQuestion 금지** — 스킬이 "ask the user"를 요구하는 모든 상황(모호한 리뷰 코멘트·설계 판단·위험한 충돌)은 PR 답글 + Linear 코멘트 "🚧 사람 판단 필요: <요약>"으로 표면화하고, 그 항목은 건드리지 않은 채 감시를 계속한다.
+   - **자동 반영 허용 범위**는 스킬의 auto-apply 기준 그대로: 기계적으로 명백한 CI fix, 기계적·명시적 리뷰 코멘트, verifier ❌ 지적 중 명백한 것. 전부 non-force push + 반영 답글.
+   - **정지 조건**: MERGED/CLOSED → 1줄 요약 남기고 정지(탭·worktree 정리는 엔진 몫). 스킬의 하드스톱(같은 체크 2회 연속 실패 등) → Linear에 사유 코멘트 후 정지(이후는 엔진의 rework/오케스트레이터가 인계).
+   - 이 탭의 **타이틀을 바꾸지 않는다** — 🛠/↩ 타이틀이 엔진(watchdog·rework dedup·리퍼)의 생존 신호다.`;
 const WORKER_DELIVERY_DIRECT = `4. **품질 다듬기**: \`/gbase:polish\` 로 현재 diff를 정리(deslop + 구조 단순화).
 5. **커밋 → \`${prBase}\` 직접 push** (⚠️ 이 루프는 PR을 열지 않는다 — 변경을 바로 \`${prBase}\`에 반영한다):
    - 변경을 의미단위로 커밋. 메시지에 \`Linear: <ISSUE-URL>\`.

@@ -23,6 +23,8 @@ if [[ -n "$CMUX" ]]; then
   refs="$("$CMUX" list-workspaces 2>/dev/null | grep -iE "(🛠|↩|⏹)[[:space:]]+${LOOP}[[:space:]]+${ID}([[:space:]]|\$)" | grep -oE 'workspace:[0-9]+')"
   for r in ${(f)refs}; do "$CMUX" close-workspace --workspace "$r" >/dev/null 2>&1 && did=1; done
 fi
+# 상주 monitor를 close-workspace로 죽이면 worker-run의 on_exit trap이 못 탈 수 있다 → stale pidfile 직접 걷기(멱등).
+rm -f "$STATE/live/$ID.pid" 2>/dev/null
 
 # 2. worktree·브랜치 제거(멱등 — 없으면 조용히 통과). PREFIX/REPO 비면 경로 사고 방지로 건너뜀.
 #    검증 전용 worktree(${WT}-vf verifier, ${WT}-vd validator)도 함께 — 각 run이 자가 정리하지만 크래시 잔재의 2중 안전망.

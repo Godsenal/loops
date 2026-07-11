@@ -117,6 +117,6 @@ loops.env   (gitignore) 머신별 도구 경로 (install.sh 생성)
 ```
 
 ## 동작
-`dispatch.sh`(cmux 패널) 가 각 loop의 스케줄대로 `orchestrator`(headless)를 발사 → orchestrator가 Linear ledger로 dedup하며 작업을 발굴, capacity만큼 `worker`(cmux 라이브 탭) fan-out → worker가 구현 → `/gbase:go`(polish+PR) → preview 검증 → **머지 안 함**. human-gate 이슈는 사람에게 남긴다. — 단 `delivery:"direct"` 루프(config.json)는 PR 대신 `prBase`로 직접 push하고 이슈를 바로 **Done**으로 옮긴다(In Review 없음). 어느 모드든 머지·force-push는 사람 게이트·금지 원칙을 그대로 유지한다.
+`dispatch.sh`(cmux 패널) 가 각 loop의 스케줄대로 `orchestrator`(headless)를 발사 → orchestrator가 Linear ledger로 dedup하며 작업을 발굴, capacity만큼 `worker`(cmux 라이브 탭) fan-out → worker가 구현 → `/gbase:go`(polish+PR) → preview 검증 → **그 세션이 `/gbase:monitor`로 머지될 때까지 상주**하며 CI 실패·리뷰 코멘트를 바로 반영(무인 규칙: 모호하면 코멘트로 사람에게 표면화, **머지·approve·force-push는 안 함**). human-gate 이슈는 사람에게 남긴다. — 단 `delivery:"direct"` 루프(config.json)는 PR 대신 `prBase`로 직접 push하고 이슈를 바로 **Done**으로 옮긴다(In Review 없음). 어느 모드든 머지·force-push는 사람 게이트·금지 원칙을 그대로 유지한다.
 
 > ⚠️ 경로는 `LOOPS_HOME`(스크립트 자기위치)·`loops.env`로 전부 동적. cmux/claude/gh/node가 다른 위치여도 `install.sh`가 맞춰준다. cmux 없는 환경은 미지원.
