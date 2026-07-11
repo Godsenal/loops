@@ -28,8 +28,11 @@ slug="$(slugof "$ID")"
 WT="${PREFIX}-${slug}"; BR="${BRPFX}/${slug}"
 
 # ③ live 탭 dedup — 워커(🛠)/재작업·복구(↩) 탭이 이미 있으면 이중 스폰 방지.
+# ⚠️ cmux 빈 응답(플레이크)을 "탭 없음"으로 믿으면 dedup이 뚫려 이중 스폰된다 — 판정 불가 = 보류.
 if [[ -n "$CMUX" ]]; then
-  live="$("$CMUX" list-workspaces 2>/dev/null | grep -iE "(🛠|↩)[[:space:]]+${LOOP}[[:space:]]+${ID}([[:space:]]|\$)" | head -1)"
+  tabs="$("$CMUX" list-workspaces 2>/dev/null)"
+  [[ -z "$tabs" ]] && { echo "rework $LOOP/$ID: cmux list-workspaces 빈 응답(플레이크?) — 보류(중복 spawn 방지)"; exit 0; }
+  live="$(print -r -- "$tabs" | grep -iE "(🛠|↩)[[:space:]]+${LOOP}[[:space:]]+${ID}([[:space:]]|\$)" | head -1)"
   [[ -n "$live" ]] && { echo "rework $LOOP/$ID: 이미 live 탭 있음 — skip"; exit 0; }
 fi
 

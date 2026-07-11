@@ -20,8 +20,13 @@ slug="$(slugof "$ID")"
 WT="${PREFIX}-${slug}"
 
 # 이미 살아있는 worker/resume 탭(🛠|↩ <loop> <id>)이 있으면 재기동 불필요 — 중복 방지.
+# ⚠️ cmux CLI가 플레이크(빈 응답/타임아웃)일 때 빈 목록을 "탭 없음"으로 믿으면 안 된다 — dedup이 뚫려
+#    같은 이슈에 ↩ 탭이 계속 쌓인다(실제 사고: heal 폭풍). 디스패처 자신이 cmux 탭에서 돌므로 정상이면
+#    목록이 빌 수 없다 → 빈 응답 = 판정 불가 = heal 보류(다음 패스에 재시도).
 if [[ -n "$CMUX" ]]; then
-  live="$("$CMUX" list-workspaces 2>/dev/null | grep -iE "(🛠|↩)[[:space:]]+${LOOP}[[:space:]]+${ID}([[:space:]]|\$)" | head -1)"
+  tabs="$("$CMUX" list-workspaces 2>/dev/null)"
+  [[ -z "$tabs" ]] && { echo "heal $LOOP/$ID: cmux list-workspaces 빈 응답(플레이크?) — heal 보류(중복 spawn 방지)"; exit 0; }
+  live="$(print -r -- "$tabs" | grep -iE "(🛠|↩)[[:space:]]+${LOOP}[[:space:]]+${ID}([[:space:]]|\$)" | head -1)"
   [[ -n "$live" ]] && { echo "heal $LOOP/$ID: 이미 live 탭 있음 — skip"; exit 0; }
 fi
 

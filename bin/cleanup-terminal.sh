@@ -65,17 +65,25 @@ while IFS= read -r p; do
   WT_EXISTS[${p#"$PREFIX"-}]=1
 done < <(git -C "$REPO" worktree list --porcelain 2>/dev/null | sed -n 's/^worktree //p')
 # 3b) 이 루프의 cmux worker 탭(🛠/↩) 열거 → slug→ref들, slug→정확한 id(제목 끝 토큰). cleanup-issue.sh와 동일 매칭 경계.
-tab_n=0
+# ⚠️ TAB_TRUTH: cmux CLI 플레이크(빈 응답)면 0. "탭 부재"를 증거로 쓰는 판정(고아 탭 닫기·유령 회수·잔재 회수)은
+#    TAB_TRUTH=1일 때만 — 빈 응답을 탭 전멸로 믿으면 산 워커 탭을 닫거나 진행 중 이슈를 Backlog로 되돌린다(실제 사고 계열).
+tab_n=0; TAB_TRUTH=0
 if [[ -n "$CMUX" ]]; then
-  while IFS= read -r line; do
-    ref="$(print -r -- "$line" | grep -oE 'workspace:[0-9]+' | head -1)"
-    # 제목 "🛠 <loop> <ID>" → ID가 마지막 토큰. ⚠️ 단, cmux는 선택된 워크스페이스 줄 끝에 "[selected]"를 붙인다 —
-    # 마커를 안 벗기면 선택된 산 워커 탭이 이슈 "[selected]"의 고아로 오인돼 닫힌다(실제 사고). 제거 후 파싱.
-    id="$(print -r -- "$line" | sed -E 's/[[:space:]]*\[selected\][[:space:]]*$//' | awk '{print $NF}')"
-    [[ -z "$ref" || -z "$id" ]] && continue
-    sl="$(slugof "$id")"
-    TAB_REFS[$sl]+="$ref "; TAB_ID[$sl]="$id"; (( tab_n++ ))
-  done < <("$CMUX" list-workspaces 2>/dev/null | grep -iE "(🛠|↩)[[:space:]]+${LOOP}[[:space:]]")
+  CMUX_TABS="$("$CMUX" list-workspaces 2>/dev/null)"
+  if [[ -n "$CMUX_TABS" ]]; then
+    TAB_TRUTH=1
+    while IFS= read -r line; do
+      ref="$(print -r -- "$line" | grep -oE 'workspace:[0-9]+' | head -1)"
+      # 제목 "🛠 <loop> <ID>" → ID가 마지막 토큰. ⚠️ 단, cmux는 선택된 워크스페이스 줄 끝에 "[selected]"를 붙인다 —
+      # 마커를 안 벗기면 선택된 산 워커 탭이 이슈 "[selected]"의 고아로 오인돼 닫힌다(실제 사고). 제거 후 파싱.
+      id="$(print -r -- "$line" | sed -E 's/[[:space:]]*\[selected\][[:space:]]*$//' | awk '{print $NF}')"
+      [[ -z "$ref" || -z "$id" ]] && continue
+      sl="$(slugof "$id")"
+      TAB_REFS[$sl]+="$ref "; TAB_ID[$sl]="$id"; (( tab_n++ ))
+    done < <(print -r -- "$CMUX_TABS" | grep -iE "(🛠|↩)[[:space:]]+${LOOP}[[:space:]]")
+  else
+    echo "⚠️ reaper $LOOP — cmux list-workspaces 빈 응답(플레이크?) → 탭 부재 기반 판정(고아/유령/잔재) skip"
+  fi
 fi
 # 3c) (pr 모드) 브랜치별 최신 PR 상태 조회. DELIVERED=PR 존재(유령 회수 veto용), 그리고 최신 PR이 **MERGED면 터미널로 승격**.
 #    ⚠️ 왜 필요한가: 사람이 PR을 머지해도 Linear→Done 전환은 LLM 오케스트레이터 STEP1(시간당 1회, 워커가 In Review로 안 옮겼으면 놓침)에
@@ -120,7 +128,8 @@ done
 
 # ⚠️ 아래 4)·5)는 Linear 상태를 바꾸거나(=4, Backlog 이동) worktree를 지운다(=5) → Linear가 신선(linear_n>0)할 때만.
 #    snapshot 폴백(만료/오프라인)일 땐 오판 위험이 커서 아예 건너뛴다(보수적). lockdir 게이트가 spawn 레이스도 막는다.
-if (( linear_n > 0 )); then
+#    + TAB_TRUTH: 둘 다 "live 탭 없음"을 veto 해제 증거로 쓰므로, cmux 플레이크(빈 목록)면 산 워커를 유령/잔재로 오판한다 — skip.
+if (( linear_n > 0 && TAB_TRUTH )); then
   # 4) started 유령 회수 — Linear started인데 worktree·worker 탭·PR(any state) 전부 없음 = 진행분 없이 in-flight 슬롯만 붙잡는 유령.
   #    linear-move로 Backlog 복귀 → 슬롯 해제 → orchestrator가 cap·우선순위 안에서 재spawn. (watchdog이 spawn 대신 리퍼로 넘긴 케이스.)
   #    escalated(사람 대기)는 건너뜀 — 사람이 볼 stuck을 리셋하지 않게. 머지/취소 아님(Backlog 이동만) — no-merge 원칙 불변.

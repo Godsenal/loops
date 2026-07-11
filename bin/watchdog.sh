@@ -72,9 +72,16 @@ if (( linear_n == 0 )) && [[ -f "$SNAP" ]]; then
   done < <(node -e 'const s=JSON.parse(require("fs").readFileSync(process.argv[1]));for(const i of (s.issues||[])){const g=String(i.id||"").toLowerCase().replace(/[^a-z0-9]+/g,"-").replace(/-+$/,"");process.stdout.write(g+"\t"+(i.id||"")+"\t"+(i.state||"")+"\n")}' "$SNAP" 2>/dev/null)
 fi
 
-# 2) live 탭(🛠|↩ <loop> <id>) slug→ref. (탭 존재 = claude 프로세스 생존 — cmux 탭은 --command 종료 시 auto-close.)
+# 2) live 탭(🛠|↩ <loop> <id>) slug→ref.
+# ⚠️ cmux CLI 플레이크(빈 응답/타임아웃) 가드: 디스패처 자신이 cmux 탭에서 돌므로 정상이면 목록이 빌 수 없다.
+#    빈 응답을 "탭 전멸"로 믿으면 산 워커 전부를 죽은 것으로 오인 → heal 폭풍(중복 ↩ 탭, 실제 사고). 판정 불가 = 패스 skip.
 typeset -A TAB_REF
 if [[ -n "$CMUX" ]]; then
+  CMUX_TABS="$("$CMUX" list-workspaces 2>/dev/null)"
+  if [[ -z "$CMUX_TABS" ]]; then
+    echo "⚠️ watchdog $LOOP — cmux list-workspaces 빈 응답(플레이크?) → 이번 패스 전체 skip"
+    exit 0
+  fi
   while IFS= read -r line; do
     ref="$(print -r -- "$line" | grep -oE 'workspace:[0-9]+' | head -1)"
     # ⚠️ cmux는 현재 선택된 워크스페이스 줄 끝에 "[selected]"를 붙인다 — $NF를 그대로 쓰면 선택된 워커 탭의
@@ -82,7 +89,7 @@ if [[ -n "$CMUX" ]]; then
     id="$(print -r -- "$line" | sed -E 's/[[:space:]]*\[selected\][[:space:]]*$//' | awk '{print $NF}')"
     [[ -z "$ref" || -z "$id" ]] && continue
     TAB_REF[$(slugof "$id")]="$ref"
-  done < <("$CMUX" list-workspaces 2>/dev/null | grep -iE "(🛠|↩)[[:space:]]+${LOOP}[[:space:]]")
+  done < <(print -r -- "$CMUX_TABS" | grep -iE "(🛠|↩)[[:space:]]+${LOOP}[[:space:]]")
 fi
 
 # 2b) 현존 worker worktree(${PREFIX}-<slug>) — 죽은 worker의 "진행분 보존 resume" 여부 판단용.
@@ -132,8 +139,11 @@ for sl in ${(k)STARTED}; do
       (( waiting++ )); continue
     fi
     # ── 탭 살아있음 → wedge(화면 정지) 검사 ──
-    h="$("$CMUX" read-screen --workspace "$ref" --lines 24 2>/dev/null | shasum | awk '{print $1}')"
-    if [[ -z "$h" ]]; then (( waiting++ )); continue; fi        # read-screen 실패(레이스) → 다음 패스로
+    # ⚠️ read-screen 빈 응답은 "화면이 비었다"가 아니라 읽기 실패/플레이크다 — 빈 입력의 shasum은 상수라
+    #    그대로 해시하면 "정지"로 오탐된다(실제 사고: wedged 오탐 3건). 빈 응답 = 판정 불가 → 다음 패스로.
+    scr="$("$CMUX" read-screen --workspace "$ref" --lines 24 2>/dev/null)"
+    if [[ -z "$scr" ]]; then (( waiting++ )); continue; fi
+    h="$(print -r -- "$scr" | shasum | awk '{print $1}')"
     prevh="$(lv_get "$id" scrhash)"; prevat="$(lv_get "$id" scrAt)"
     if [[ "$h" != "$prevh" ]]; then
       lv_put "$id" "{\"scrhash\":\"$h\",\"scrAt\":$now,\"attempts\":0}"   # 진행중 → 건강(dead/escalated/wedged 클리어, scr만 유지)
