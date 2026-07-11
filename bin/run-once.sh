@@ -1,6 +1,6 @@
 #!/bin/zsh
 # 한 루프의 orchestrator 본체. render된 프롬프트로 claude -p 실행. lock per-loop.
-# usage: run-once.sh <loop-id>   (env: LOOP_MODE=full|audit_only, LOOP_MAX_WORKERS 선택)
+# usage: run-once.sh <loop-id>   (env: LOOP_MODE=full|audit_only|reconcile|retro, LOOP_MAX_WORKERS 선택)
 set -u
 source "${0:A:h}/_common.sh"
 LOOP="${1:?usage: run-once.sh <loop-id>}"
@@ -53,10 +53,15 @@ else
   git -C "$ORCHWT" clean -fd -q 2>/dev/null
 fi
 
-PROMPT="$(node "$ROOT/bin/render-prompt.mjs" "$LOOP" orchestrator)"
+TPL=orchestrator; [[ "$LOOP_MODE" == "retro" ]] && TPL=retro   # retro = 성과 분석→learnings.md 갱신 전용 프롬프트(발굴/fan-out 없음)
+PROMPT="$(node "$ROOT/bin/render-prompt.mjs" "$LOOP" "$TPL")"
 echo "[$(date '+%F %T')] ===== $LOOP orchestrator start (mode=$LOOP_MODE${TIMEOUT_BIN:+, timeout=${RUN_TIMEOUT}s}) =====" >> "$STATE/run.log"
-( cd "$ORCHWT" && ${=TIMEOUT_BIN} ${=CLAUDE_CMD} -p "$PROMPT" --dangerously-skip-permissions ) >> "$STATE/run.log" 2>&1
+# --output-format json 으로 실행해 비용/사용량을 캡처한다. -p 는 어차피 최종 결과만 stdout에 쓰므로(스트리밍 없음)
+# 사람이 읽는 run.log 내용은 record-cost.mjs가 result 텍스트를 뽑아 그대로 보존한다(stderr는 종전처럼 run.log 직행).
+OUTJSON="$STATE/.last_run_out.json"
+( cd "$ORCHWT" && ${=TIMEOUT_BIN} ${=CLAUDE_CMD} -p "$PROMPT" --output-format json --dangerously-skip-permissions ) > "$OUTJSON" 2>> "$STATE/run.log"
 code=$?
+node "$ROOT/bin/record-cost.mjs" "$LOOP" "$OUTJSON" cycle "$LOOP_MODE" >> "$STATE/run.log" 2>&1
 [[ -n "$TIMEOUT_BIN" && $code -eq 124 ]] && echo "[$(date '+%F %T')] ⏱ run timeout(${RUN_TIMEOUT}s) 초과 — claude 강제종료(exit 124)" >> "$STATE/run.log"
 echo "[$(date '+%F %T')] ===== $LOOP orchestrator end (exit $code) =====" >> "$STATE/run.log"
 echo "$code" > "$STATE/.last_run_exit"   # 최신 run의 exit (성공 run이 0으로 덮어 배너 자동해제)

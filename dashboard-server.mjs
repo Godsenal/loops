@@ -3,7 +3,7 @@
 // ⚠️ cmux 패널 안에서 실행해야 함(제어가 cmux 소켓 접근). loopctl dashboard 로 띄움.
 import http from 'node:http';
 import https from 'node:https';
-import { readFileSync, writeFileSync, existsSync, readdirSync, mkdirSync } from 'node:fs';
+import { readFileSync, writeFileSync, existsSync, readdirSync, mkdirSync, statSync } from 'node:fs';
 import { execFile, execFileSync, spawn } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 import { dirname } from 'node:path';
@@ -49,6 +49,23 @@ function awakeStatus() { const t = readText(GAWAKE).trim(); const pid = t ? +t :
 function botRunning() { try { execFileSync('/usr/bin/pgrep', ['-f', `${ROOT}/bin/notify-bot.mjs`], { timeout: 2000 }); return true; } catch { return false; } }
 function telegramStatus() { const e = loadEnv(); return { configured: !!(e.TELEGRAM_BOT_TOKEN || ''), paired: !!(e.TELEGRAM_CHAT_ID || ''), running: botRunning() }; }
 function feedOf(st) { return readText(`${st}/runs.jsonl`).trim().split('\n').filter(Boolean).map(l => { try { return JSON.parse(l); } catch { return null; } }).filter(Boolean); }
+// 루프 경제성 집계 — costs.jsonl(run-once가 사이클마다 append) + 파생 counts + rework.json.
+// perMergedUsd = "머지된 변경 1건당 오케스트레이션 비용" (측정 범위는 headless 오케스트레이터 사이클 — 라이브 TUI 워커 비용은 미측정).
+function economicsOf(st, cfg, counts, rework) {
+  const lines = readText(`${st}/costs.jsonl`).trim().split('\n').filter(Boolean).slice(-5000);
+  const d = new Date(); d.setHours(0, 0, 0, 0); const t0 = Math.floor(d.getTime() / 1000);
+  let todayUsd = 0, totalUsd = 0, cycles = 0;
+  for (const l of lines) { try { const e = JSON.parse(l); if (e.usd) { totalUsd += e.usd; if (e.ts >= t0) todayUsd += e.usd; } if (e.kind === 'cycle') cycles++; } catch {} }
+  const merged = counts.Done || 0, canceled = counts.Canceled || 0;
+  const budgetDailyUsd = (cfg.budget && cfg.budget.dailyUsd) || null;
+  return {
+    todayUsd: +todayUsd.toFixed(4), totalUsd: +totalUsd.toFixed(4), cycles,
+    perMergedUsd: merged ? +(totalUsd / merged).toFixed(4) : null,
+    mergeRate: (merged + canceled) ? +(merged / (merged + canceled)).toFixed(3) : null,
+    reworkTotal: Object.values(rework).reduce((s, r) => s + (r.count || 0), 0),
+    budgetDailyUsd, budgetExceeded: !!(budgetDailyUsd && todayUsd >= budgetDailyUsd),
+  };
+}
 
 // PR 상태 캐시 — 이슈 브랜치(branchPrefix/slug)로 라이브 조회. 60초마다 백그라운드 갱신(status 요청을 막지 않음).
 // snapshot.json(orchestrator가 시간당 1회 기록)에 의존하지 않으므로, worker가 방금 연 PR·방금 닫힌/머지된 PR도 즉시 반영된다.
@@ -99,14 +116,19 @@ function loopStatus(lid, allTabs) {
   // 🛠=fresh worker, ↩=resume/heal 탭 둘 다 "살아있는 worker"로 인식 (안 하면 heal된 ↩ 탭을 죽은 걸로 오판해 워치독이 무한 재기동).
   for (const t of allTabs) { const m = (t.title || '').match(new RegExp('(?:🛠|↩)\\s*' + lid + '\\s+(\\S+)')); if (m) tabByIssue[m[1].toUpperCase()] = t.ref; }
   const liveness = readJSON(`${st}/liveness.json`) || {};   // watchdog.sh가 쓰는 spawn-liveness 상태 {issue:{attempts,escalated,...}}
+  const rework = readJSON(`${st}/rework.json`) || {};       // rework-worker.sh가 쓰는 리뷰 재작업 상태 {issue:{count,lastAt,exhausted}}
   const issues = (snap?.issues || []).map(i => {
     const live = prByBranch[branchOf(cfg, lid, i.id)] || null;
     const ws = tabByIssue[i.id] || null, alive = !!ws;
     const lv = liveness[i.id] || null;
+    const rw = rework[i.id] || null;
+    // 재작업 상한 도달은 리뷰가 아직 CHANGES_REQUESTED로 열려있는 동안만 경보 — 사람이 머지/승인/닫으면 자동 해소.
+    const reworkExhausted = !!(rw && rw.exhausted && live && live.state === 'OPEN' && live.review === 'CHANGES_REQUESTED');
     const stuck = !!(lv && lv.escalated);                      // 워치독이 자가복구 N회 실패로 포기 → 사람 필요
     const wedged = !!(lv && lv.wedged && alive);               // 탭은 살아있으나 화면이 WEDGE_SEC 이상 정지 = 멈춘 claude → 사람 확인(자동 kill 안 함)
     const healing = !!(lv && lv.attempts > 0 && !lv.escalated && !alive);  // 자가복구 진행중(조용, 경보 아님)
     const gateResolved = i.flag === 'human-gate' && existsSync(`${st}/decisions/${i.id}.md`);
+    const verify = readJSON(`${st}/verify/${i.id}.json`);   // 검증자(verifier) verdict {verdict,ts,summary} — verify 켜진 루프만 존재
     // 표시 상태 = 라이브 신호(PR + 탭) 우선. snapshot은 시간당 1회라 뒤처지므로 보조로만.
     let state = i.state, working = false;
     if (live && live.merged) state = 'Done';
@@ -121,9 +143,11 @@ function loopStatus(lid, allTabs) {
       merged: live ? live.merged : undefined, prState: live ? live.state : undefined, checks: live ? live.checks : undefined,
       ci: live ? live.ci : undefined, review: live ? live.review : undefined, reviewCount: live ? live.reviewCount : undefined,
       commentCount: live ? live.commentCount : undefined, gateResolved,
+      verify: verify ? { verdict: verify.verdict, ts: verify.ts, summary: verify.summary } : null,
       stuck, wedged, healing, healAttempts: lv ? (lv.attempts || 0) : 0,
-      // attention 우선순위: escalate된 stuck(강경) > wedged(멈춘 claude) > 워치독 독립 baseline stalled(단 자가복구중이면 억제). healing은 경보 아님(칩만).
-      attention: (live ? live.attention : null) || (i.flag === 'human-gate' && !gateResolved ? 'human-gate' : null) || (stuck ? 'stuck' : null) || (wedged ? 'wedged' : null) || (stalled && !healing ? 'stalled-worker' : null),
+      reworkCount: rw ? (rw.count || 0) : 0, reworkExhausted,
+      // attention 우선순위: rework-exhausted(자동 반영 포기 → 사람 필수) > PR 라이브 신호 > human-gate > stuck > wedged > stalled.
+      attention: (reworkExhausted ? 'rework-exhausted' : null) || (live ? live.attention : null) || (i.flag === 'human-gate' && !gateResolved ? 'human-gate' : null) || (stuck ? 'stuck' : null) || (wedged ? 'wedged' : null) || (stalled && !healing ? 'stalled-worker' : null),
     };
   }).sort((a, b) => (order[a.state] ?? 9) - (order[b.state] ?? 9));
   // counts는 파생 상태로 재계산 → 사이드바/카운트가 카드와 일치 (snap.counts는 시간당 1회라 뒤처짐).
@@ -140,6 +164,10 @@ function loopStatus(lid, allTabs) {
     delivery: cfg.delivery || 'pr',
     schedule: cfg.schedule || { intervalSec: 3600, startAt: null }, paused: existsSync(`${st}/PAUSED`),
     nextTs, lastRun, counts, issues, feed: f.slice(-40).reverse(),
+    economics: economicsOf(st, cfg, counts, rework),
+    learningsTs: (() => { try { return Math.floor(statSync(`${st}/learnings.md`).mtimeMs / 1000); } catch { return null; } })(),
+    // 오케스트레이터가 인프라 wedge(cmux spawn 실패 등)로 사이클을 못 돌 때 snapshot에 남기는 {reason,streak} — UI 배너로 표출.
+    blocked: snap?.blocked || null,
     attentionCount: issues.filter(i => i.attention).length,
     // "정리 필요" = Linear(snapshot)는 아직 In Review인데 PR은 이미 머지/닫힘 → reconcile 유도
     mergedInReview: issues.filter(i => i.snapState === 'In Review' && i.merged).length,
@@ -304,6 +332,8 @@ async function control(a, p) {
     }
     case 'bot-stop': { execFile('/usr/bin/pkill', ['-f', `${ROOT}/bin/notify-bot.mjs`], () => {}); return { ok: true, out: '봇 중지' }; }
     case 'save-mission': { if (!lid) return { ok: false }; try { writeFileSync(`${LOOPS}/${lid}/mission.md`, p.content || ''); return { ok: true, out: 'mission 저장' }; } catch (e) { return { ok: false, out: '' + e }; } }
+    case 'save-learnings': { if (!lid) return { ok: false }; try { mkdirSync(`${LOOPS}/${lid}/state`, { recursive: true }); writeFileSync(`${LOOPS}/${lid}/state/learnings.md`, p.content || ''); return { ok: true, out: 'learnings 저장 (다음 run부터 주입)' }; } catch (e) { return { ok: false, out: '' + e }; } }
+    case 'run-retro': { if (!lid) return { ok: false, out: 'no loop' }; if (existsSync(`/tmp/loop-${lid}.lockdir`)) return { ok: false, out: '⏳ orchestrator 실행 중 — 끝난 뒤 다시 누르세요.' }; spawn(`${ROOT}/bin/spawn-orchestrator.sh`, [lid, 'retro'], { stdio: 'ignore' }); return { ok: true, out: lid + ' 🧠 retro 분석 시작 (learnings.md 갱신, ~수분)' }; }
     case 'save-config': {
       if (!lid) return { ok: false }; const cfg = readJSON(cfgPath(lid)) || {};
       for (const k of ['name', 'emoji', 'repo', 'linearProjectId', 'linearProjectUrl', 'orchestratorWorktree', 'worktreePrefix', 'branchPrefix', 'baseRef', 'prBase', 'claudeCmd']) if (p[k] !== undefined) cfg[k] = p[k];
@@ -363,7 +393,7 @@ function sessionText(u) {
   const lid = u.searchParams.get('loop'); if (lid) return readText(`${LOOPS}/${lid}/state/run.log`).split('\n').slice(-300).join('\n');
   return '(no ref/loop)';
 }
-function promptText(u) { const lid = u.searchParams.get('loop'); if (!lid) return ''; return readText(`${LOOPS}/${lid}/mission.md`); }
+function promptText(u) { const lid = u.searchParams.get('loop'); if (!lid) return ''; if (u.searchParams.get('learnings')) return readText(`${LOOPS}/${lid}/state/learnings.md`); return readText(`${LOOPS}/${lid}/mission.md`); }
 
 // 원격 노출 인증 게이트: 프록시(터널) 경유 요청에만 Basic auth 요구. 로컬 직접(127.0.0.1, XFF 없음)은 무인증이라 cmux 패널 사용은 그대로.
 // LOOPS_REMOTE_AUTH="user:pass" (loops.env). 미설정이면 게이트 비활성 = 로컬 전용 기본 동작 유지.

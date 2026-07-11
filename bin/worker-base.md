@@ -6,7 +6,7 @@
 - 작업 디렉터리 = 현재 cwd. 이미 이 작업 **전용 worktree**이고, `{{BASE_REF}}` 기준 **전용 브랜치**가 체크아웃돼 있다(다른 worker와 격리). 레포: `{{REPO}}`.
 - 규약: cwd의 CLAUDE.md / AGENTS.md 준수. **fallback 금지**(root cause 수정). 프로덕션 — **force-push 절대 금지.** 변경을 반영하는 방식(PR / main 직접 push)은 아래 절차 4~를 그대로 따른다.
 - Linear: 프로젝트 projectId `{{LINEAR_PROJECT_ID}}`. 배정 이슈 ID는 프롬프트 끝에 주어진다.
-
+{{LEARNINGS}}
 ═══════════════════════════════════════════════════
 절차
 ═══════════════════════════════════════════════════

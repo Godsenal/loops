@@ -91,6 +91,7 @@ const ATT = {
   'changes': { emoji: '✍️', label: '변경 요청됨' },
   'pr-closed': { emoji: '🚪', label: 'PR 닫힘 (정리 대상)' },
   'stuck': { emoji: '🧟', label: '워커 멈춤 — 자가복구 실패 (재시도/버리기 필요)' },
+  'rework-exhausted': { emoji: '🔁', label: '리뷰 재작업 상한 도달 — 자동 반영 중단, 사람 확인 필요' },
 };
 const STATE_EMOJI = { 'In Progress': '🔨', 'In Review': '👀', 'Backlog': '📋', 'Done': '✅', 'Canceled': '🚫' };
 
@@ -133,11 +134,32 @@ async function pollStatus() {
       cur[key] = true;
       if (!n.seen[key]) fresh.push({ loop, att: 'run-error', key });
     }
+    // 일일 예산 소프트 캡 도달 — exceeded가 유지되는 동안 키가 살아있어 하루 1회만 알림, 자정 리셋 후 재발 시 다시 알림.
+    if (loop.economics && loop.economics.budgetExceeded) {
+      const key = `${loop.id}||budget`;
+      cur[key] = true;
+      if (!n.seen[key]) fresh.push({ loop, att: 'budget', key });
+    }
+    // 인프라 wedge로 사이클이 반복 실패 중 (snapshot blocked.streak) — 이유가 바뀌면 새 알림.
+    if (loop.blocked && loop.blocked.reason) {
+      const key = `${loop.id}||blocked@${loop.blocked.reason}`;
+      cur[key] = true;
+      if (!n.seen[key]) fresh.push({ loop, att: 'blocked', key });
+    }
+    // retro가 learnings.md를 갱신함 (mtime 변화) — 사람이 뭘 학습했는지 항상 볼 수 있어야 한다(comprehension debt 방지).
+    if (loop.learningsTs) {
+      const key = `${loop.id}||learnings@${loop.learningsTs}`;
+      cur[key] = true;
+      if (!n.seen[key]) fresh.push({ loop, att: 'learnings', key });
+    }
   }
   n.seen = cur;   // 사라진 신호는 seen에서 제거 → 재발생 시 다시 알림
   if (!seeded) { seeded = true; saveNotify(n); log(`시드 완료 — 현재 신호 ${Object.keys(cur).length}개는 알림 없이 봄 처리`); return; }
   for (const f of fresh) {
     if (f.att === 'run-error') { await send(`${f.loop.emoji} <b>${esc(f.loop.name)}</b>\n⚠️ 오케스트레이터 사이클 오류 (exit ${f.loop.lastRun.exit}) — 대시보드에서 run.log 확인`); botlog('out', `⚠️ ${f.loop.id} 사이클오류 exit ${f.loop.lastRun.exit}`); continue; }
+    if (f.att === 'budget') { const ec = f.loop.economics; await send(`${f.loop.emoji} <b>${esc(f.loop.name)}</b>\n💰 일일 예산 초과 ($${ec.todayUsd}/$${ec.budgetDailyUsd}) — 오늘 남은 사이클 자동 skip, 자정 재개`); botlog('out', `💰 ${f.loop.id} 예산 초과`); continue; }
+    if (f.att === 'blocked') { await send(`${f.loop.emoji} <b>${esc(f.loop.name)}</b>\n⛔ 사이클 막힘${f.loop.blocked.streak ? ` ×${f.loop.blocked.streak}` : ''} — ${esc(f.loop.blocked.reason)}`); botlog('out', `⛔ ${f.loop.id} 사이클 막힘`); continue; }
+    if (f.att === 'learnings') { await send(`${f.loop.emoji} <b>${esc(f.loop.name)}</b>\n🧠 learnings 갱신됨 — 대시보드 ⚙️ 설정에서 내용을 확인하세요 (다음 run부터 프롬프트에 주입)`); botlog('out', `🧠 ${f.loop.id} learnings 갱신`); continue; }
     const m = messageFor(f.loop, f.issue, f.att);
     botlog('out', `🔔 ${ATT[f.att].emoji} ${f.issue.id} ${f.att} (${f.loop.id})`);
     const r = await send(m.text, m.keyboard);

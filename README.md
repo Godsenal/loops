@@ -86,12 +86,19 @@ loopctl start                           # 디스패처
 | `schedule.intervalSec` | orchestrator 발사 주기(초). 최소 60. | `10800` (3시간) | 선택(기본 `3600`) |
 | `schedule.startAt` | 최초 발사 시각 `"HH:MM"`. `null`이면 즉시부터 주기 시작. | `null` / `"09:00"` | 선택(기본 `null`) |
 | `enabled` | `false`면 스케줄 발사 안 함. 신규 loop은 `false`로 시작. | `false` | 선택(기본 `true`) |
+| `verify` | `true`면 worker가 PR을 연 직후 **별도 fresh-context 검증자**(maker/checker 분리)가 이슈 수용 기준으로 PR을 채점해 verdict(✅/⚠️/❌)를 PR·Linear에 코멘트. ❌면 재작업 자동 트리거. 검증자는 Edit/Write가 구조적으로 차단됨(코드 못 고침). pr 모드 전용. | `true` | 선택(기본 `false`) |
+| `budget.dailyUsd` | 일일 비용 소프트 캡(USD). 오늘 `costs.jsonl` 합계가 캡 이상이면 dispatcher가 **다음 사이클만 skip**(진행 중 worker는 안 죽임), 자정 리셋 후 자동 재개. 측정 범위=headless 사이클(오케스트레이터·retro·검증자). | `5` | 선택(기본 없음=무제한) |
+| `on.ciFailure` | `true`면 `prBase` 브랜치에 **새 CI 실패** 등장 시 interval을 기다리지 않고 즉시 사이클 발사. | `true` | 선택(기본 `false`) |
+| `on.prReview` | `true`면 이 루프의 열린 PR에 **새 사람 리뷰** 제출 시 즉시 사이클 발사(리뷰 반영 지연 단축). | `true` | 선택(기본 `false`) |
+| `on.linearNew` | `true`면 Linear 프로젝트에 **새 Backlog 이슈** 등장 시 즉시 사이클 발사(Linear에서 이슈만 만들면 곧 착수). | `true` | 선택(기본 `false`) |
+| `retro.everyCycles` | 정규 사이클 N개마다 **retro 분석 run**(LOOP_MODE=retro)을 자동 발사해 `state/learnings.md`(교훈)를 갱신 — 머지/거절/리뷰/human-gate 판례에서 패턴을 추출해 다음 run 프롬프트에 주입. 0/미설정=비활성. | `20` | 선택(기본 없음=비활성) |
 
 ## 구조
 ```
 bin/        엔진(공통):
             · 코어 파이프라인: dispatch·run-once·spawn-orchestrator·spawn-worker·worker-run·render-prompt (·_common 공통 source·preflight)
-            · 프롬프트 템플릿: orchestrator-base.md·worker-base.md (← {{MISSION}}·config 치환) · loop-builder.md
+            · 프롬프트 템플릿: orchestrator-base.md·worker-base.md·verifier-base.md·retro-base.md (← {{MISSION}}·{{LEARNINGS}}·config 치환) · loop-builder.md
+            · 피드백 루프: rework-worker(리뷰/verdict 재작업 스폰) · spawn-verifier+verifier-run(maker/checker 검증) · event-poll(CI실패·리뷰·Linear신규 이벤트 트리거) · record-cost(사이클 비용 캡처)
             · 신뢰성/정리(결정론적): watchdog(spawn-liveness)·heal-worker·cleanup-terminal(reaper)·cleanup-issue·cleanup-loop
             · Linear ledger·빌드: linear-move·linear-states · build-loop
             · notify-bot.mjs  Telegram 원격 브리지 (loopctl bot) · loops-mcp.mjs  봇 에이전트용 제어 MCP 서버(안전 면만)

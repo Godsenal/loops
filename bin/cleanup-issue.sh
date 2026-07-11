@@ -25,9 +25,11 @@ if [[ -n "$CMUX" ]]; then
 fi
 
 # 2. worktree·브랜치 제거(멱등 — 없으면 조용히 통과). PREFIX/REPO 비면 경로 사고 방지로 건너뜀.
+#    검증 전용 worktree(${WT}-vf)도 함께 — verifier-run이 자가 정리하지만 크래시 잔재의 2중 안전망.
 if [[ -n "$REPO" && -n "$PREFIX" ]]; then
   [[ -d "$WT" ]] && did=1
   git -C "$REPO" worktree remove --force "$WT" 2>/dev/null
+  git -C "$REPO" worktree remove --force "${WT}-vf" 2>/dev/null
   git -C "$REPO" worktree prune 2>/dev/null
   git -C "$REPO" branch -D "$BR" 2>/dev/null && did=1
 fi

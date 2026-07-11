@@ -32,6 +32,7 @@ STEP 1 — 열린 작업 진행 (중복 방지)
   - **`state == MERGED` (사람이 머지함) → Linear 이슈를 `Done`으로 이동** + "✅ 머지됨(<url>) → Done" 코멘트. 이러면 in-flight에서 빠져 cap이 풀린다. (worker 탭·worktree는 네가 건드리지 말 것 — run 후 `run-once.sh`가 종료 상태로 보고 자동 정리한다.)
   - **`state == CLOSED`(머지 없이 닫힘) → Linear 이슈를 `Canceled`로 이동** + "⚠️ PR #N이 머지 없이 닫힘 → Canceled (재개하려면 이슈를 Backlog로 옮기세요)" 코멘트. 사람이 일부러 닫은 것이므로 자동 재시도(Backlog 복귀·재spawn) 하지 말 것 — Canceled는 in-flight에서 빠져 cap을 푼다. 사용자가 다시 원하면 직접 Backlog로 옮긴다.
   - `state == OPEN`: CI/리뷰 확인 → 이슈에 1줄 코멘트. CI 실패가 명백히 기계적이면 그 브랜치에서 고쳐 push. green+approved면 "✅ 머지 준비됨" 코멘트만. **절대 머지 금지.**
+    - **각 OPEN PR 이슈마다 쉘 실행: `{{REWORK_WORKER}} <ISSUE-IDENTIFIER>`** — 피드백 반영 재작업 워커. 사람 리뷰어의 `CHANGES_REQUESTED` 또는 검증자(verifier)의 ❌ fail verdict가 **새로** 쌓였을 때만 보존된 worktree에서 워커를 재스폰하는 결정론적 가드(새 피드백 게이트 · 이슈당 상한 · live 탭 dedup)를 내장한다 — 조건 판단 없이 OPEN PR마다 무조건 호출해도 안전하다(no-op·중복 호출 무해). 출력에 `REWORK_EXHAUSTED`가 있으면 이슈에 "🔁 재작업 상한 도달 — 사람 확인 필요" 코멘트만 남긴다.
 - 죽은 In Progress(worker 탭 없음)는 **이제 결정론적 쉘이 담당한다 — 너는 원칙적으로 손대지 마라.** run 밖 ≤60s 케이던스로:
   - worktree가 남아있으면(진행분 있음) 워치독이 그 worktree에서 resume 재기동(heal)한다.
   - worktree가 없으면(진행분 없는 유령) 리퍼(cleanup-terminal)가 `linear-move`로 Backlog에 자동 복귀시켜 in-flight 슬롯을 푼다.
@@ -48,7 +49,7 @@ STEP 2 — 백로그 보충 (Backlog < {{BACKLOG_TARGET}} 일 때만 · `reconci
 ────────── MISSION (이 루프가 무슨 일을 어떻게 찾는가) ──────────
 {{MISSION}}
 ──────────────────────────────────────────────────────────────
-
+{{LEARNINGS}}
 규칙: **구체적·배포가능한 finding만** 이슈화. 기존 프로젝트 이슈와 제목/대상으로 dedup. 본문 필수: [대상(URL/파일/범위)] · [문제] · [제안 fix(파일/접근)] · [기대 효과] · [수용 기준]. 사람 판단 필요/추측 불가피한 건 본문에 "human-gate" 명시. run당 가볍게(한 주제).
 
 ═══════════════════════════════════════════════════

@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 // 루프의 base 프롬프트 + mission + config 값을 합쳐 최종 프롬프트를 stdout으로.
-// usage: render-prompt.mjs <loop-id> [orchestrator|worker]
+// usage: render-prompt.mjs <loop-id> [orchestrator|worker|verifier]
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { dirname } from 'node:path';
@@ -20,21 +20,31 @@ const vars = {
   STATE_DIR: `${ROOT}/loops/${loopId}/state`,
   ORCH_WORKTREE: cfg.orchestratorWorktree || '',
   WORKTREE_PREFIX: cfg.worktreePrefix || '',
+  BRANCH_PREFIX: cfg.branchPrefix || `loop-${loopId}`,
   SPAWN_WORKER: `${ROOT}/bin/spawn-worker.sh ${loopId}`,
+  REWORK_WORKER: `${ROOT}/bin/rework-worker.sh ${loopId}`,
 };
-if (which === 'orchestrator') {
+if (which === 'orchestrator' || which === 'retro') {
   let mission = '';
   try { mission = readFileSync(`${ROOT}/loops/${loopId}/mission.md`, 'utf8'); } catch {}
   vars.MISSION = mission.trim() || '(mission.md 비어있음 — 이 루프의 임무를 정의하세요)';
 }
+// retro가 축적한 교훈(state/learnings.md) → 오케스트레이터(발굴 기준)·워커(구현 기준)에 주입. 없으면 토큰이 통째로 사라진다.
+let learnings = '';
+try { learnings = readFileSync(`${ROOT}/loops/${loopId}/state/learnings.md`, 'utf8').trim(); } catch {}
+vars.LEARNINGS = learnings
+  ? `\n────────── LEARNINGS (retro가 이 루프의 실제 성과에서 추출한 교훈 — 발굴·구현 시 반영하라) ──────────\n${learnings}\n──────────────────────────────────────────────────────────────\n`
+  : '';
 
 // 변경 반영 방식(worker 절차 4~ / orchestrator 안내). 기본 'pr'은 기존 동작 그대로, 'direct'는 base에 직접 push.
 // ⚠️ 주입 문자열 안의 base는 실제 값(prBase)으로 박는다 — replace는 1패스라 {{토큰}}은 재처리되지 않음.
+const VERIFY_STEP = cfg.verify === true ? `
+6.5 **검증자 스폰**: 쉘 실행 \`${ROOT}/bin/spawn-verifier.sh ${loopId} <배정 이슈 ID>\` — 너와 별개의 fresh-context 검증자가 이 PR을 이슈의 수용 기준으로 채점해 verdict를 PR/Linear에 코멘트한다. 완료를 기다리지 않는다.` : '';
 const WORKER_DELIVERY_PR = `4. **\`/gbase:go\` 실행** — polish + 브랜치/커밋/PR 생성(+ CI/preview 링크). base=\`${prBase}\`, 일반 PR, 본문에 \`Linear: <ISSUE-URL>\`.
    - ⚠️ **머지까지 가지 말 것.** monitor가 머지/장시간 대기로 흐르면 PR·preview 확보 시점에 빠져나온다. 머지는 사람 게이트.
    - 무거운 install은 가능하면 생략(정적 분석 충분시). 정밀 검증은 PR의 **CI가 게이트**.
 5. **프리뷰 테스트**: PR/CI 봇 preview URL을 찾아 WebFetch로 변경이 실제 반영됐는지 검증. 없으면 기록.
-6. **Linear 이슈를 In Review**로 + PR 링크 + preview 결과 코멘트.
+6. **Linear 이슈를 In Review**로 + PR 링크 + preview 결과 코멘트.${VERIFY_STEP}
 7. **머지하지 않는다.** 정지. (이 탭은 검토/이어서 작업용으로 남는다.)`;
 const WORKER_DELIVERY_DIRECT = `4. **품질 다듬기**: \`/gbase:polish\` 로 현재 diff를 정리(deslop + 구조 단순화).
 5. **커밋 → \`${prBase}\` 직접 push** (⚠️ 이 루프는 PR을 열지 않는다 — 변경을 바로 \`${prBase}\`에 반영한다):

@@ -3,7 +3,7 @@
 set -u
 source "${0:A:h}/_common.sh"
 LOOP="${1:?usage: spawn-orchestrator.sh <loop-id> [mode]}"
-MODE="${2:-full}"   # full | audit_only | reconcile
+MODE="${2:-full}"   # full | audit_only | reconcile | retro
 ROOT="$LOOPS_HOME"; STATE=$ROOT/loops/$LOOP/state
 mkdir -p "$STATE"
 ts=$(date '+%s')
