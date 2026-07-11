@@ -18,7 +18,7 @@ ivof(){ node -e 'const c=JSON.parse(require("fs").readFileSync(process.argv[1]))
 
 while true; do
   if [[ ! -f "$PAUSED" ]]; then
-    for CFG in $ROOT/loops/*/config.json; do
+    for CFG in $ROOT/loops/*/config.json(N); do
       [[ -f "$CFG" ]] || continue
       lid="$(field "$CFG" id)"; [[ -z "$lid" ]] && continue
       [[ "$(field "$CFG" enabled)" == "false" ]] && continue
@@ -50,7 +50,7 @@ while true; do
     now=$(date +%s); lastev=$(cat "$STATE/.last_eventpoll" 2>/dev/null || echo 0)
     if (( now - lastev >= 60 )); then
       echo "$now" > "$STATE/.last_eventpoll"
-      for CFG in $ROOT/loops/*/config.json; do
+      for CFG in $ROOT/loops/*/config.json(N); do
         [[ -f "$CFG" ]] || continue
         lid="$(field "$CFG" id)"; [[ -z "$lid" ]] && continue
         "$ROOT/bin/event-poll.sh" "$lid" >> "$ROOT/loops/$lid/state/run.log" 2>&1
@@ -62,7 +62,7 @@ while true; do
     now=$(date +%s); lastrt=$(cat "$STATE/.last_retrocheck" 2>/dev/null || echo 0)
     if (( now - lastrt >= 300 )); then
       echo "$now" > "$STATE/.last_retrocheck"
-      for CFG in $ROOT/loops/*/config.json; do
+      for CFG in $ROOT/loops/*/config.json(N); do
         [[ -f "$CFG" ]] || continue
         lid="$(field "$CFG" id)"; [[ -z "$lid" ]] && continue
         [[ "$(field "$CFG" enabled)" == "false" ]] && continue
@@ -88,7 +88,7 @@ while true; do
   now=$(date +%s); lastreap=$(cat "$STATE/.last_reap" 2>/dev/null || echo 0)
   if (( now - lastreap >= 60 )); then
     echo "$now" > "$STATE/.last_reap"
-    for CFG in $ROOT/loops/*/config.json; do
+    for CFG in $ROOT/loops/*/config.json(N); do
       [[ -f "$CFG" ]] || continue
       lid="$(field "$CFG" id)"; [[ -z "$lid" ]] && continue
       [[ -d /tmp/loop-$lid.lockdir ]] && continue
@@ -103,7 +103,7 @@ while true; do
   now=$(date +%s); lastup=$(cat "$STATE/.last_update" 2>/dev/null || echo 0)
   if (( upiv > 0 && now - lastup >= upiv )); then
     echo "$now" > "$STATE/.last_update"
-    busy=""; for d in /tmp/loop-*.lockdir; do [[ -d "$d" ]] && { busy=1; break; }; done
+    busy=""; for d in /tmp/loop-*.lockdir(N); do [[ -d "$d" ]] && { busy=1; break; }; done
     if [[ -z "$busy" ]]; then
       LOOPS_UPDATE_QUIET=1 "$ROOT/bin/self-update.sh" >> "$STATE/dispatcher.log" 2>&1
       if (( $? == 10 )); then
@@ -119,7 +119,7 @@ while true; do
   now=$(date +%s); lastwd=$(cat "$STATE/.last_watchdog" 2>/dev/null || echo 0)
   if (( now - lastwd >= 60 )); then
     echo "$now" > "$STATE/.last_watchdog"
-    for CFG in $ROOT/loops/*/config.json; do
+    for CFG in $ROOT/loops/*/config.json(N); do
       [[ -f "$CFG" ]] || continue
       lid="$(field "$CFG" id)"; [[ -z "$lid" ]] && continue
       [[ -d /tmp/loop-$lid.lockdir ]] && continue
