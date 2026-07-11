@@ -69,9 +69,9 @@ dispatch.sh (cmux panel, loops while-true)
 ## A loop's anatomy
 
 `loops/<id>/` (gitignored — user data) contains:
-- `config.json` — schema: `id, name, emoji, repo, baseRef (origin/develop), prBase (develop), branchPrefix, orchestratorWorktree, worktreePrefix, linearProjectId, linearProjectUrl, maxWorkers, backlogTarget, schedule{startAt,intervalSec}, enabled` + opt-in feedback-layer fields: `verify (bool), budget{dailyUsd}, on{ciFailure,prReview,linearNew}, retro{everyCycles}`. See `examples/*/config.json` and the README field table.
+- `config.json` — schema: `id, name, emoji, repo, baseRef (origin/develop), prBase (develop), branchPrefix, orchestratorWorktree, worktreePrefix, linearProjectId, linearProjectUrl, maxWorkers, backlogTarget, schedule{startAt,intervalSec}, enabled, claudeCmd, delivery` + opt-in feedback-layer fields: `verify (bool), validate (bool), budget{dailyUsd}, on{ciFailure,prReview,linearNew}, retro{everyCycles}`. See `examples/*/config.json` and the README field table.
 - `mission.md` — injected as `{{MISSION}}` into the orchestrator prompt; defines *what work to discover and how* (the only domain-specific logic).
-- `state/` — runtime: `snapshot.json` (dashboard reads this — orchestrator writes it in STEP 4), `runs.jsonl` (append-only event feed), `run.log`, `next_fire`, `decisions/<ISSUE>.md` (human-gate resolutions), `PAUSED`, `costs.jsonl` (headless-run usage), `rework.json` (review-rework counters), `events.json` (event-poll cursors), `verify/<ISSUE>.json` (verifier verdicts), `learnings.md` (retro lessons → `{{LEARNINGS}}`), `liveness.json` (watchdog).
+- `state/` — runtime: `snapshot.json` (dashboard reads this — orchestrator writes it in STEP 4), `runs.jsonl` (append-only event feed), `run.log`, `next_fire`, `decisions/<ISSUE>.md` (human-gate resolutions), `PAUSED`, `costs.jsonl` (headless-run usage), `rework.json` (review-rework counters), `events.json` (event-poll cursors), `verify/<ISSUE>.json` (verifier verdicts), `validate/<ISSUE>.json` (validator verdicts), `learnings.md` (retro lessons → `{{LEARNINGS}}`), `liveness.json` (watchdog).
 
 The Linear project **is** the state machine (dedup across runs): `Backlog → In Progress → In Review → Done/Canceled`. A "run log" tracking issue per loop gets one comment per cycle.
 
