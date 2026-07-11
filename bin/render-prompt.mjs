@@ -23,11 +23,18 @@ const vars = {
   SPAWN_WORKER: `${ROOT}/bin/spawn-worker.sh ${loopId}`,
   REWORK_WORKER: `${ROOT}/bin/rework-worker.sh ${loopId}`,
 };
-if (which === 'orchestrator' || which === 'retro') {
+if (which === 'orchestrator' || which === 'retro' || which === 'validator') {
   let mission = '';
   try { mission = readFileSync(`${ROOT}/loops/${loopId}/mission.md`, 'utf8'); } catch {}
   vars.MISSION = mission.trim() || '(mission.md 비어있음 — 이 루프의 임무를 정의하세요)';
 }
+// 사람 소유 제품 방향(loops/<id>/vision.md) → 발굴·검증·회고의 정렬/기각 기준. 없으면 빈 문자열(블록 통째 생략).
+// mission(무엇을 어떻게 찾나)과 분리된 이유: retro가 mission을 못 건드리는 불변을 지키면서 방향은 공유하기 위함.
+let vision = '';
+try { vision = readFileSync(`${ROOT}/loops/${loopId}/vision.md`, 'utf8').trim(); } catch {}
+vars.VISION = vision
+  ? `\n────────── VISION (제품 방향 — 사람 소유, 제안·발굴의 정렬/기각 기준) ──────────\n${vision}\n──────────────────────────────────────────────────────────────\n`
+  : '';
 // retro가 축적한 교훈(state/learnings.md) → 오케스트레이터(발굴 기준)·워커(구현 기준)에 주입. 없으면 토큰이 통째로 사라진다.
 let learnings = '';
 try { learnings = readFileSync(`${ROOT}/loops/${loopId}/state/learnings.md`, 'utf8').trim(); } catch {}

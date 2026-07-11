@@ -102,9 +102,12 @@ function messageFor(loop, issue, att) {
   const kb = [];
   if (att === 'human-gate') {
     const ask = issue.gate && issue.gate.ask ? `\n⚖️ ${esc(issue.gate.ask)}` : '';
+    // 제안 검증자(validator) 판정 병기 — validate 켜진 제안형 루프만 존재. 게이트 결정을 30초로 만드는 독립 의견.
+    const V_EMOJI = { strengthen: '🟢 강화', narrow: '🟡 축소 권고', reject: '🔴 기각 권고' };
+    const v = issue.validate ? `\n🧪 ${V_EMOJI[issue.validate.verdict] || esc(issue.validate.verdict)} — ${esc(issue.validate.askNote || issue.validate.summary || '')}${issue.validate.alternative && issue.validate.alternative !== '없음' ? `\n   ↳ 축소안: ${esc(issue.validate.alternative)}` : ''}` : '';
     kb.push([{ text: '✅ 그대로 진행', callback_data: `ok|${loop.id}|${issue.id}` }, { text: '🗑 취소', callback_data: `cxl|${loop.id}|${issue.id}` }]);
     if (issue.url) kb.push([{ text: '🔗 이슈', url: issue.url }]);
-    return { text: `${head}\n${line}${ask}\n\n💬 이 메시지에 <b>답장</b>으로 결정을 적어 보내면 그대로 워커에 전달됩니다.`, keyboard: kb };
+    return { text: `${head}\n${line}${ask}${v}\n\n💬 이 메시지에 <b>답장</b>으로 결정을 적어 보내면 그대로 워커에 전달됩니다.`, keyboard: kb };
   }
   if (att === 'pr-closed') kb.push([{ text: '🧹 정리', callback_data: `cln|${loop.id}|${issue.id}` }]);
   if (att === 'stuck') kb.push([{ text: '↻ 재시도', callback_data: `heal|${loop.id}|${issue.id}` }, { text: '🗑 버리기', callback_data: `cxl|${loop.id}|${issue.id}` }]);

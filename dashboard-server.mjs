@@ -129,6 +129,7 @@ function loopStatus(lid, allTabs) {
     const healing = !!(lv && lv.attempts > 0 && !lv.escalated && !alive);  // 자가복구 진행중(조용, 경보 아님)
     const gateResolved = i.flag === 'human-gate' && existsSync(`${st}/decisions/${i.id}.md`);
     const verify = readJSON(`${st}/verify/${i.id}.json`);   // 검증자(verifier) verdict {verdict,ts,summary} — verify 켜진 루프만 존재
+    const validate = readJSON(`${st}/validate/${i.id}.json`);   // 제안 검증자(validator) verdict {verdict,ts,summary,ask_note,alternative} — validate 켜진 제안형 루프만 존재
     // 표시 상태 = 라이브 신호(PR + 탭) 우선. snapshot은 시간당 1회라 뒤처지므로 보조로만.
     let state = i.state, working = false;
     if (live && live.merged) state = 'Done';
@@ -144,6 +145,7 @@ function loopStatus(lid, allTabs) {
       ci: live ? live.ci : undefined, review: live ? live.review : undefined, reviewCount: live ? live.reviewCount : undefined,
       commentCount: live ? live.commentCount : undefined, gateResolved,
       verify: verify ? { verdict: verify.verdict, ts: verify.ts, summary: verify.summary } : null,
+      validate: validate ? { verdict: validate.verdict, ts: validate.ts, summary: validate.summary, askNote: validate.ask_note, alternative: validate.alternative } : null,
       stuck, wedged, healing, healAttempts: lv ? (lv.attempts || 0) : 0,
       reworkCount: rw ? (rw.count || 0) : 0, reworkExhausted,
       // attention 우선순위: rework-exhausted(자동 반영 포기 → 사람 필수) > PR 라이브 신호 > human-gate > stuck > wedged > stalled.
@@ -264,7 +266,7 @@ async function control(a, p) {
       const wt = worktreeOf(lid, p.issue);
       if (!existsSync(wt)) return { ok: false, out: 'worktree 없음(정리됨)' };
       const r = await sh(CMUX, ['new-workspace', '--cwd', wt, '--command', 'claude --resume']);
-      const m = (r.out || '').match(/workspace:\d+/); if (m) { await sh(CMUX, ['rename-workspace', '--workspace', m[0], '↩ ' + lid + ' ' + p.issue]); reorderBottom(m[0]); }
+      const m = (r.out || '').match(/workspace:\d+/); if (m) { await sh(CMUX, ['rename-workspace', '--workspace', m[0], '↩ ' + lid + ' ' + p.issue]); reorderBottom(m[0]); await sh(CMUX, ['select-workspace', '--workspace', m[0]]); }
       activateCmux(); return r;
     }
     case 'start-issue': { if (!lid || !p.issue) return { ok: false }; spawn(`${ROOT}/bin/spawn-worker.sh`, [lid, p.issue], { stdio: 'ignore' }); setTimeout(activateCmux, 8000); return { ok: true, out: p.issue + ' worker 시작 중...' }; }
@@ -332,11 +334,13 @@ async function control(a, p) {
     }
     case 'bot-stop': { execFile('/usr/bin/pkill', ['-f', `${ROOT}/bin/notify-bot.mjs`], () => {}); return { ok: true, out: '봇 중지' }; }
     case 'save-mission': { if (!lid) return { ok: false }; try { writeFileSync(`${LOOPS}/${lid}/mission.md`, p.content || ''); return { ok: true, out: 'mission 저장' }; } catch (e) { return { ok: false, out: '' + e }; } }
+    case 'save-vision': { if (!lid) return { ok: false }; try { writeFileSync(`${LOOPS}/${lid}/vision.md`, p.content || ''); return { ok: true, out: 'vision 저장 (다음 run부터 주입)' }; } catch (e) { return { ok: false, out: '' + e }; } }
     case 'save-learnings': { if (!lid) return { ok: false }; try { mkdirSync(`${LOOPS}/${lid}/state`, { recursive: true }); writeFileSync(`${LOOPS}/${lid}/state/learnings.md`, p.content || ''); return { ok: true, out: 'learnings 저장 (다음 run부터 주입)' }; } catch (e) { return { ok: false, out: '' + e }; } }
     case 'run-retro': { if (!lid) return { ok: false, out: 'no loop' }; if (existsSync(`/tmp/loop-${lid}.lockdir`)) return { ok: false, out: '⏳ orchestrator 실행 중 — 끝난 뒤 다시 누르세요.' }; spawn(`${ROOT}/bin/spawn-orchestrator.sh`, [lid, 'retro'], { stdio: 'ignore' }); return { ok: true, out: lid + ' 🧠 retro 분석 시작 (learnings.md 갱신, ~수분)' }; }
     case 'save-config': {
       if (!lid) return { ok: false }; const cfg = readJSON(cfgPath(lid)) || {};
       for (const k of ['name', 'emoji', 'repo', 'linearProjectId', 'linearProjectUrl', 'orchestratorWorktree', 'worktreePrefix', 'branchPrefix', 'baseRef', 'prBase', 'claudeCmd']) if (p[k] !== undefined) cfg[k] = p[k];
+      if (p.delivery === 'pr' || p.delivery === 'direct') cfg.delivery = p.delivery;   // 배달 방식(enum) — 유효값만 기록(no silent fallback)
       if (p.maxWorkers != null) cfg.maxWorkers = Math.max(1, +p.maxWorkers);
       if (p.backlogTarget != null) cfg.backlogTarget = Math.max(1, +p.backlogTarget);
       writeFileSync(cfgPath(lid), JSON.stringify(cfg, null, 2)); return { ok: true, out: 'config 저장' };
@@ -359,8 +363,8 @@ async function control(a, p) {
       const desc = p.description; if (!desc) return { ok: false, out: '설명 필요' };
       const b64 = Buffer.from(String(desc), 'utf8').toString('base64');
       const r = await sh(CMUX, ['new-workspace', '--cwd', ROOT, '--command', `${ROOT}/bin/build-loop.sh ${b64}`]);
-      const m = (r.out || '').match(/workspace:\d+/); if (m) { await sh(CMUX, ['rename-workspace', '--workspace', m[0], '🤖 loop builder']); reorderBottom(m[0]); }
-      activateCmux(); return { ok: true, out: '🤖 루프 빌더 시작 — 새 탭에서 진행을 보세요. 완료되면 사이드바에 loop가 뜹니다.' };
+      const m = (r.out || '').match(/workspace:\d+/); if (m) { await sh(CMUX, ['rename-workspace', '--workspace', m[0], '🤖 loop builder']); reorderBottom(m[0]); await sh(CMUX, ['select-workspace', '--workspace', m[0]]); }   // 새 탭을 실제로 선택해야 activate 시 빌더가 보인다 (없으면 직전 선택 탭이 뜬다)
+      activateCmux(); return { ok: true, out: '🤖 루프 빌더 시작 — 새 탭에서 몇 가지 선택지에 답하면 완성됩니다("다 맡김" 옵션도 있음). 완료되면 사이드바에 loop가 뜹니다.' };
     }
     case 'create-loop': {
       const id = slugOf(p.id || ''); if (!id) return { ok: false, out: 'id 필요' };
@@ -393,7 +397,7 @@ function sessionText(u) {
   const lid = u.searchParams.get('loop'); if (lid) return readText(`${LOOPS}/${lid}/state/run.log`).split('\n').slice(-300).join('\n');
   return '(no ref/loop)';
 }
-function promptText(u) { const lid = u.searchParams.get('loop'); if (!lid) return ''; if (u.searchParams.get('learnings')) return readText(`${LOOPS}/${lid}/state/learnings.md`); return readText(`${LOOPS}/${lid}/mission.md`); }
+function promptText(u) { const lid = u.searchParams.get('loop'); if (!lid) return ''; if (u.searchParams.get('learnings')) return readText(`${LOOPS}/${lid}/state/learnings.md`); if (u.searchParams.get('vision')) return readText(`${LOOPS}/${lid}/vision.md`); return readText(`${LOOPS}/${lid}/mission.md`); }
 
 // 원격 노출 인증 게이트: 프록시(터널) 경유 요청에만 Basic auth 요구. 로컬 직접(127.0.0.1, XFF 없음)은 무인증이라 cmux 패널 사용은 그대로.
 // LOOPS_REMOTE_AUTH="user:pass" (loops.env). 미설정이면 게이트 비활성 = 로컬 전용 기본 동작 유지.

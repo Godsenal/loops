@@ -6,11 +6,12 @@ learnings.md는 다음 run부터 오케스트레이터(발굴 기준)와 워커(
 환경
 ═══════════════════════════════════════════════════
 - 작업 디렉터리(cwd) = orchestrator worktree. 레포: `{{REPO}}`. Linear projectId: `{{LINEAR_PROJECT_ID}}`.
-- **mission.md는 절대 수정 금지** — 미션은 사람의 것이고, 교훈은 별도 파일(learnings.md)이다.
+- **mission.md·vision.md는 절대 수정 금지** — 미션과 비전은 사람의 것이고, 교훈은 별도 파일(learnings.md)이다.
 - 참고용 현재 미션:
 ────────── MISSION ──────────
 {{MISSION}}
 ─────────────────────────────
+{{VISION}}
 
 ═══════════════════════════════════════════════════
 절차

@@ -20,16 +20,17 @@ did=0
 # 1. cmux 워크스페이스 닫기. ref(workspace:N)는 불안정 → 제목으로 매칭(대시보드 tabByIssue 패턴과 동일).
 #    워커 탭(🛠) + resume 탭(↩) 둘 다. ID 뒤는 공백/줄끝으로 경계 → LIN-12 가 LIN-123 을 잘못 잡지 않게.
 if [[ -n "$CMUX" ]]; then
-  refs="$("$CMUX" list-workspaces 2>/dev/null | grep -iE "(🛠|↩)[[:space:]]+${LOOP}[[:space:]]+${ID}([[:space:]]|\$)" | grep -oE 'workspace:[0-9]+')"
+  refs="$("$CMUX" list-workspaces 2>/dev/null | grep -iE "(🛠|↩|⏹)[[:space:]]+${LOOP}[[:space:]]+${ID}([[:space:]]|\$)" | grep -oE 'workspace:[0-9]+')"
   for r in ${(f)refs}; do "$CMUX" close-workspace --workspace "$r" >/dev/null 2>&1 && did=1; done
 fi
 
 # 2. worktree·브랜치 제거(멱등 — 없으면 조용히 통과). PREFIX/REPO 비면 경로 사고 방지로 건너뜀.
-#    검증 전용 worktree(${WT}-vf)도 함께 — verifier-run이 자가 정리하지만 크래시 잔재의 2중 안전망.
+#    검증 전용 worktree(${WT}-vf verifier, ${WT}-vd validator)도 함께 — 각 run이 자가 정리하지만 크래시 잔재의 2중 안전망.
 if [[ -n "$REPO" && -n "$PREFIX" ]]; then
   [[ -d "$WT" ]] && did=1
   git -C "$REPO" worktree remove --force "$WT" 2>/dev/null
   git -C "$REPO" worktree remove --force "${WT}-vf" 2>/dev/null
+  git -C "$REPO" worktree remove --force "${WT}-vd" 2>/dev/null
   git -C "$REPO" worktree prune 2>/dev/null
   git -C "$REPO" branch -D "$BR" 2>/dev/null && did=1
 fi

@@ -87,6 +87,7 @@ loopctl start                           # 디스패처
 | `schedule.startAt` | 최초 발사 시각 `"HH:MM"`. `null`이면 즉시부터 주기 시작. | `null` / `"09:00"` | 선택(기본 `null`) |
 | `enabled` | `false`면 스케줄 발사 안 함. 신규 loop은 `false`로 시작. | `false` | 선택(기본 `true`) |
 | `verify` | `true`면 worker가 PR을 연 직후 **별도 fresh-context 검증자**(maker/checker 분리)가 이슈 수용 기준으로 PR을 채점해 verdict(✅/⚠️/❌)를 PR·Linear에 코멘트. ❌면 재작업 자동 트리거. 검증자는 Edit/Write가 구조적으로 차단됨(코드 못 고침). pr 모드 전용. | `true` | 선택(기본 `false`) |
+| `validate` | `true`면 매 사이클 후 **미판정 human-gate 제안 이슈**마다 별도 fresh-context **제안 검증자**(🧪 validator)가 근거를 실물 재현·심문(수요 진단·전제 도전·축소안 1개)해 판정(🟢 strengthen/🟡 narrow/🔴 reject)을 Linear 코멘트 + 게이트 UI(대시보드·Telegram)에 병기. 제안형(PM) 루프용 — 승인/기각은 여전히 사람. Edit/Write 구조 차단. `vision.md`가 있으면 정렬 기준으로 주입. | `true` | 선택(기본 `false`) |
 | `budget.dailyUsd` | 일일 비용 소프트 캡(USD). 오늘 `costs.jsonl` 합계가 캡 이상이면 dispatcher가 **다음 사이클만 skip**(진행 중 worker는 안 죽임), 자정 리셋 후 자동 재개. 측정 범위=headless 사이클(오케스트레이터·retro·검증자). | `5` | 선택(기본 없음=무제한) |
 | `on.ciFailure` | `true`면 `prBase` 브랜치에 **새 CI 실패** 등장 시 interval을 기다리지 않고 즉시 사이클 발사. | `true` | 선택(기본 `false`) |
 | `on.prReview` | `true`면 이 루프의 열린 PR에 **새 사람 리뷰** 제출 시 즉시 사이클 발사(리뷰 반영 지연 단축). | `true` | 선택(기본 `false`) |
@@ -97,8 +98,8 @@ loopctl start                           # 디스패처
 ```
 bin/        엔진(공통):
             · 코어 파이프라인: dispatch·run-once·spawn-orchestrator·spawn-worker·worker-run·render-prompt (·_common 공통 source·preflight)
-            · 프롬프트 템플릿: orchestrator-base.md·worker-base.md·verifier-base.md·retro-base.md (← {{MISSION}}·{{LEARNINGS}}·config 치환) · loop-builder.md
-            · 피드백 루프: rework-worker(리뷰/verdict 재작업 스폰) · spawn-verifier+verifier-run(maker/checker 검증) · event-poll(CI실패·리뷰·Linear신규 이벤트 트리거) · record-cost(사이클 비용 캡처)
+            · 프롬프트 템플릿: orchestrator-base.md·worker-base.md·verifier-base.md·validator-base.md·retro-base.md (← {{MISSION}}·{{VISION}}·{{LEARNINGS}}·config 치환) · loop-builder.md
+            · 피드백 루프: rework-worker(리뷰/verdict 재작업 스폰) · spawn-verifier+verifier-run(maker/checker 검증) · spawn-validator+validator-run(제안 심문 → 게이트 병기) · event-poll(CI실패·리뷰·Linear신규 이벤트 트리거) · record-cost(사이클 비용 캡처)
             · 신뢰성/정리(결정론적): watchdog(spawn-liveness)·heal-worker·cleanup-terminal(reaper)·cleanup-issue·cleanup-loop
             · Linear ledger·빌드: linear-move·linear-states · build-loop
             · notify-bot.mjs  Telegram 원격 브리지 (loopctl bot) · loops-mcp.mjs  봇 에이전트용 제어 MCP 서버(안전 면만)

@@ -70,3 +70,12 @@ date '+%s' > "$STATE/.last_run_done"
 # 종료 상태(Linear completed/canceled) worker worktree·탭·브랜치 자동 정리(결정론적 쉘 — LLM 안 거침).
 # cleanup-terminal.sh가 실제 worktree를 열거하고 Linear(권위 ledger) 상태로 종료 판정한다(snapshot은 폴백).
 "$ROOT/bin/cleanup-terminal.sh" "$LOOP" >> "$STATE/run.log" 2>&1
+
+# 제안 검증(validator, opt-in config `"validate": true`): snapshot의 미판정 human-gate Backlog 제안마다
+# fresh-context 검증자를 결정론적으로 스폰(LLM 안 거침). 멱등 — 판정 파일·사람 결정·live 탭 존재 시 spawn-validator가 skip.
+if [[ "$(cfgval "$CFG" validate)" == "true" ]]; then
+  for vid in $(node -e 'try{const s=JSON.parse(require("fs").readFileSync(process.argv[1],"utf8"));for(const i of s.issues||[])if(i.flag==="human-gate"&&i.state==="Backlog")console.log(i.id)}catch{}' "$STATE/snapshot.json"); do
+    [[ -f "$STATE/validate/$vid.json" ]] && continue
+    "$ROOT/bin/spawn-validator.sh" "$LOOP" "$vid" >> "$STATE/run.log" 2>&1
+  done
+fi
