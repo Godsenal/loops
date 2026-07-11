@@ -4,10 +4,41 @@ set -u
 source "${0:A:h}/_common.sh"
 ROOT="$LOOPS_HOME"; STATE=$ROOT/state
 PID=$STATE/dispatcher.pid; PAUSED=$STATE/PAUSED
-mkdir -p "$STATE"; echo $$ > "$PID"
-cleanup(){ rm -f "$PID"; }
+mkdir -p "$STATE"
+# 이중 기동 가드: 살아있는 디스패처가 이미 있으면 즉시 종료(pid 파일은 건드리지 않음 — trap 설치 전이라 안전).
+# 이중 기동 경로: loopctl start 경합, cmux의 지연 materialize(비 cmux 컨텍스트 spawn이 렌더 시점에 뒤늦게 실행됨) 등.
+prev="$(cat "$PID" 2>/dev/null)"
+if [[ -n "$prev" && "$prev" != "$$" ]] && kill -0 "$prev" 2>/dev/null; then
+  echo "[$(date '+%F %T')] 이미 실행 중(pid $prev) — 중복 인스턴스 종료" >> "$STATE/dispatcher.log"
+  exit 0
+fi
+echo $$ > "$PID"
+cleanup(){
+  rm -f "$PID"
+  # 자기 탭 ⏹ 리네임(워커 on_exit 미러) — 산 척하는 🔁 셸을 남기지 않는다. SIGHUP(PTY째 사망)엔 안 돌지만 sweep이 커버.
+  [[ -n "${MY_WS:-}" && -n "${CMUX_BIN:-}" ]] && "$CMUX_BIN" rename-workspace --workspace "$MY_WS" "⏹ loops dispatcher" >/dev/null 2>&1
+  rm -f "$STATE/panel.dispatcher.ref"
+}
 trap 'cleanup; exit 0' INT TERM EXIT
 echo "[$(date '+%F %T')] loops dispatcher start (pid $$)" >> "$STATE/dispatcher.log"
+
+# ── 자기 탭 인식: 어느 워크스페이스가 "진짜 디스패처"인지의 단일 원천(state/panel.dispatcher.ref).
+#    supervisor panels sweep이 이 ref 외의 🔁 탭(cmux 재시작 복원 셸·스테일 큐 ⏳·이중기동 잔재)을 닫는다.
+#    identify 실패(플레이크·비 cmux 컨텍스트) → ref 파일 제거 — sweep은 파일 없으면 🔁 정리를 skip(판정불가=skip 원칙).
+MY_WS="$(own_workspace_ref)" || MY_WS=""
+if [[ -n "$MY_WS" ]]; then
+  echo "$MY_WS" > "$STATE/panel.dispatcher.ref"
+  # 큐 탭(⏳)에서 지연 발화한 경우 마커 해제 — 내 탭이 디스패처 타이틀일 때만(수동 실행한 사용자 터미널 보호).
+  mytitle="$("$CMUX_BIN" list-workspaces 2>/dev/null | strip_selected | grep -E "^\*?[[:space:]]*${MY_WS}[[:space:]]" | sed -E "s/^\*?[[:space:]]*${MY_WS}[[:space:]]+//" | head -1)"
+  if [[ "$mytitle" == *"loops dispatcher"* && "$mytitle" == *"⏳"* ]]; then
+    "$CMUX_BIN" rename-workspace --workspace "$MY_WS" "🔁 loops dispatcher" >/dev/null 2>&1
+  fi
+else
+  rm -f "$STATE/panel.dispatcher.ref"
+  echo "[$(date '+%F %T')] ⚠️ own_workspace_ref 실패 — panel.dispatcher.ref 미기록(sweep은 🔁 정리 skip)" >> "$STATE/dispatcher.log"
+fi
+# 기동 직후 1회 패널 정리 — cmux 재시작 후 첫 부활 시점에 죽은 인프라 탭(복원 셸·⏳ 잔재)을 즉시 수렴.
+"$ROOT/bin/supervisor.sh" panels >> "$STATE/supervisor.log" 2>&1
 
 field(){ cfgval "$@" 2>/dev/null; }   # _common.sh의 cfgval에 stderr 억제만 덧씌운 래퍼(기존 동작 보존)
 # 루프 일일 예산(config budget.dailyUsd) 소프트 캡: 오늘 costs.jsonl 합계가 캡 이상이면 사유를 출력(비면 통과).
@@ -94,6 +125,24 @@ while true; do
       [[ -d /tmp/loop-$lid.lockdir ]] && continue
       CLEANUP_QUIET=1 "$ROOT/bin/cleanup-terminal.sh" "$lid" >> "$ROOT/loops/$lid/state/run.log" 2>&1
     done
+  fi
+
+  # ── panel-heal: 죽은 대시보드·봇 패널 재기동(supervisor.sh panels 스코프, ≤60s). 디스패처의 PTY 컨텍스트에서 ──
+  # spawn해야 cmux 탭이 즉시 materialize되므로 launchd(supervisor full — 디스패처만 감독)가 아니라 여기서 돈다.
+  # STOPPED 마커(의도적 정지)·crash-loop 윈도는 supervisor.sh가 판단. PAUSED와 무관한 housekeeping이라 가드 밖.
+  now=$(date +%s); lastph=$(cat "$STATE/.last_panelheal" 2>/dev/null || echo 0)
+  if (( now - lastph >= 60 )); then
+    echo "$now" > "$STATE/.last_panelheal"
+    "$ROOT/bin/supervisor.sh" panels >> "$STATE/supervisor.log" 2>&1
+  fi
+
+  # ── incident-bridge: 엔진 런타임 장애(사이클 연속 실패·supervisor escalate/롤백)를 엔진 자가개선 루프의 ──
+  # Linear 이슈로 자동 발제(≤120s). 신호는 전부 과거 run/이벤트 기록에서 오므로 housekeeping — PAUSED 가드 밖.
+  # dedup·일일 캡은 incident-bridge.sh 안에서 (state/incidents.json). LINEAR 키/엔진 루프 미설정이면 조용히 스킵.
+  now=$(date +%s); lastinc=$(cat "$STATE/.last_incident" 2>/dev/null || echo 0)
+  if (( now - lastinc >= 120 )); then
+    echo "$now" > "$STATE/.last_incident"
+    "$ROOT/bin/incident-bridge.sh" >> "$STATE/dispatcher.log" 2>&1
   fi
 
   # ── self-update: origin이 앞서면 엔진(LOOPS_HOME)을 fast-forward로 자동 갱신. 코드가 바뀌면 디스패처 재실행. ──

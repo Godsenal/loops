@@ -21,3 +21,16 @@ cfgval(){ node -e 'const c=JSON.parse(require("fs").readFileSync(process.argv[1]
 # worktree(${PREFIX}-<slug>)·브랜치(${BRPFX}/<slug>)·cmux 탭 매칭·terminal 정리가 모두 이 규칙에 걸려 있어
 # spawn/cleanup이 반드시 같은 slug를 산출해야 한다 — 그 단일 원천(single source of truth).
 slugof(){ echo "$1" | tr '[:upper:]' '[:lower:]' | tr -c 'a-z0-9' '-' | sed 's/-*$//'; }
+
+# 자기(호출 프로세스가 사는 PTY) cmux workspace ref. `cmux identify`의 caller.workspace_ref.
+# 인프라 패널(dispatcher/dashboard/bot)이 "내 탭이 어느 것인가"를 기록(state/panel.*.ref)하는 데 쓴다 —
+# ref는 세션 간 불안정하지만 "지금 이 순간의 자기 탭" 식별에는 유일하게 정확하다(타이틀은 중복 가능).
+# 실패(비-cmux 컨텍스트·플레이크·구버전 cmux) → 빈 stdout + 비0 종료. 호출자는 skip으로 처리(무음 fallback 금지 — 로그 남길 것).
+own_workspace_ref(){
+  [[ -z "${CMUX_BIN:-}" ]] && return 1
+  "$CMUX_BIN" identify 2>/dev/null | node -e 'let d="";process.stdin.on("data",c=>d+=c).on("end",()=>{try{const r=JSON.parse(d).caller.workspace_ref;if(!/^workspace:\d+$/.test(r))process.exit(1);process.stdout.write(r)}catch{process.exit(1)}})'
+}
+
+# cmux list-workspaces 라인에서 선택 마커 제거. cmux는 선택된 워크스페이스 줄 끝에 "[selected]"를 붙인다 —
+# 안 벗기면 타이틀 정확매칭/마지막 토큰 파싱이 깨진다(실제 사고: 286b5a2). 신규 코드는 이 헬퍼를 쓸 것.
+strip_selected(){ sed -E 's/[[:space:]]*\[selected\][[:space:]]*$//'; }

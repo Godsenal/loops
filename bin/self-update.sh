@@ -25,6 +25,19 @@ base_sha="$(git merge-base @ '@{u}' 2>/dev/null)"
 
 [[ "$local_sha" == "$remote_sha" ]] && { q "[self-update] 최신 ($branch @ ${local_sha:0:7})"; exit 0; }
 
+# crash-loop 롤백 hold: supervisor가 되돌린 커밋(state/.update_hold)이 여전히 origin 최신이면 재당김 보류 —
+# 같은 깨진 코드를 즉시 다시 받아 crash-loop을 반복하는 것 방지. origin이 그 커밋을 지나 전진하면(수정 푸시) 자동 해제.
+HOLD="$LOOPS_HOME/state/.update_hold"
+if [[ -f "$HOLD" ]]; then
+  bad="$(cat "$HOLD" 2>/dev/null)"
+  if [[ -n "$bad" && "$remote_sha" == "$bad" ]]; then
+    q "[self-update] ⛔ hold: origin(${bad:0:7})은 crash-loop로 롤백된 커밋 — origin에 수정이 올라올 때까지 보류 (수동 해제: rm state/.update_hold)"
+    exit 0
+  fi
+  rm -f "$HOLD"
+  echo "[self-update] hold 해제 — origin이 롤백 커밋(${bad:0:7})을 지나 전진"
+fi
+
 # 로컬이 upstream의 조상이 아니면 ff 불가(로컬 커밋 존재 or divergence) → 강제 금지, 스킵.
 if [[ "$local_sha" != "$base_sha" ]]; then
   echo "[self-update] ⚠️ fast-forward 불가(로컬 커밋/divergence) — 자동 갱신 스킵. 수동 확인: git -C $LOOPS_HOME status"
@@ -36,6 +49,9 @@ errf="$(mktemp)"
 if git merge --ff-only '@{u}' >/dev/null 2>"$errf"; then
   rm -f "$errf"
   new_sha="$(git rev-parse @)"
+  # 업데이트 이력(ts old new) — supervisor의 crash-loop 롤백이 "직전 업데이트가 원인인가"를 이 마지막 줄로 판정.
+  mkdir -p "$LOOPS_HOME/state"
+  print -r -- "$(date +%s) $local_sha $new_sha" >> "$LOOPS_HOME/state/.update_history"
   echo "[self-update] ✅ ${local_sha:0:7} → ${new_sha:0:7} ($branch) 자동 갱신"
   exit 10
 else

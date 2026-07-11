@@ -208,13 +208,34 @@ async function control(a, p) {
   switch (a) {
     case 'start': {
       // ▶ = "켜기": 이미 running이면 PAUSED를 해제(=resume)한다. running+paused일 때 ▶가 no-op으로 보이던 함정 제거.
+      await sh('/bin/rm', ['-f', `${GSTATE}/STOPPED.dispatcher`]);   // "켜라"는 의도 — supervisor 감독 대상으로 복귀
       const gd = globalDispatcher();
       if (gd.running) { if (gd.paused) { await sh('/bin/rm', ['-f', GPAUSED]); return { ok: true, out: 'resumed (paused 해제)' }; } return { ok: true, out: 'already running' }; }
-      const r = await sh(CMUX, ['new-workspace', '--cwd', ROOT, '--command', `${ROOT}/bin/dispatch.sh`]);
-      const m = (r.out || '').match(/workspace:\d+/); if (m) { await sh(CMUX, ['rename-workspace', '--workspace', m[0], '🔁 loops dispatcher']); reorderBottom(m[0]); }
-      return r;
+      // 디스패처가 죽어있으므로 지금 존재하는 모든 🔁/⏹ 디스패처 탭은 잔재다: cmux 재시작 복원 셸(렌더 전 read-screen
+      // 실패 — select해도 큐에 명령이 없어 아무것도 실행 안 됨) 또는 스테일 큐/종료 마킹. 유일한 예외 = 미materialize
+      // ⏳ 탭(spawn-panel QUEUE_OK가 남긴 "의도된 큐") — 그건 재사용(전면화 시 자동 발화)하고 나머지는 회수한다.
+      // (실사고 7/11: 마커 없는 복원 셸을 "큐 대기"로 재사용 → 가짜 성공 → supervisor crash-loop 오판 → 30분 hold.)
+      try {
+        let queued = null; const closes = [];
+        for (const l of execFileSync(CMUX, ['list-workspaces'], { encoding: 'utf8', timeout: 4000 }).split('\n')) {
+          const t = l.replace(/\s*\[selected\]\s*$/, '');
+          if (!t.includes('🔁 loops dispatcher') && !t.includes('⏹ loops dispatcher')) continue;
+          const m = t.match(/workspace:\d+/); if (!m) continue;
+          let mat = true;
+          try { execFileSync(CMUX, ['read-screen', '--workspace', m[0], '--lines', '1'], { stdio: 'ignore', timeout: 4000 }); } catch { mat = false; }
+          if (!queued && !mat && t.includes('⏳')) { queued = m[0]; continue; }   // 의도된 큐 탭 1개 재사용
+          closes.push(m[0]);   // 그 외: 복원 셸·발화 후 즉사한 ⏳ 셸·⏹ 잔재·여분 큐 — 회수
+        }
+        for (const r of closes) await sh(CMUX, ['close-workspace', '--workspace', r]);
+        if (queued) { await sh(CMUX, ['select-workspace', '--workspace', queued]); return { ok: true, out: `큐 대기 ⏳ 탭(${queued}) 유지 — cmux 창이 화면에 보이면 자동 시작됩니다` }; }
+      } catch (e) { console.error('start: 🔁 잔재 정리 스캔 실패(무해, spawn 진행):', e.message); }
+      // spawn은 spawn-panel.sh 단일 원천(materialize 검증·격상·폐기) — 디스패처만 큐 잔류 허용(QUEUE_OK, 이중기동 가드 전제).
+      const r = await new Promise(res => execFile(`${ROOT}/bin/spawn-panel.sh`, [ROOT, `${ROOT}/bin/dispatch.sh`, '🔁 loops dispatcher'], { timeout: 30000, env: { ...process.env, SPAWN_PANEL_QUEUE_OK: '1' } }, (e, so, se) => res({ code: e ? (typeof e.code === 'number' ? e.code : 1) : 0, out: (so || '').trim(), err: (se || '').trim() })));
+      if (r.code === 0) { if (r.out) reorderBottom(r.out); return { ok: true, out: `디스패처 시작 (${r.out})` }; }
+      if (r.code === 2) return { ok: true, out: `🕐 디스패처 큐 대기(⏳ ${r.out}) — cmux 창을 화면에 띄우면 자동 시작됩니다` };
+      return { ok: false, out: r.err || 'spawn-panel 실패' };
     }
-    case 'stop': { const pid = globalDispatcher().pid; if (pid) { try { process.kill(pid, 'SIGTERM'); } catch {} setTimeout(() => { try { if (pidAlive(pid)) process.kill(pid, 'SIGKILL'); } catch {} }, 1500); } execFile('/usr/bin/pkill', ['-f', `${ROOT}/bin/dispatch.sh`], () => {}); return { ok: true, out: 'stopped' }; }
+    case 'stop': { writeFileSync(`${GSTATE}/STOPPED.dispatcher`, '');   /* 의도적 정지 마커 — supervisor가 재기동하지 않도록 */ const pid = globalDispatcher().pid; if (pid) { try { process.kill(pid, 'SIGTERM'); } catch {} setTimeout(() => { try { if (pidAlive(pid)) process.kill(pid, 'SIGKILL'); } catch {} }, 1500); } execFile('/usr/bin/pkill', ['-f', `${ROOT}/bin/dispatch.sh`], () => {}); return { ok: true, out: 'stopped' }; }
     case 'pause': return sh('/usr/bin/touch', [GPAUSED]);
     case 'resume': return sh('/bin/rm', ['-f', GPAUSED]);
     case 'awake-on': {
@@ -328,11 +349,20 @@ async function control(a, p) {
     case 'bot-start': {   // Telegram 브리지를 cmux 패널로 기동 (dashboard/dispatcher와 동일 방식). 봇은 /api/status·/api/control만 호출 — merge/deploy/force-push 없음.
       if (botRunning()) return { ok: true, out: '봇 이미 실행 중' };
       if (!loadEnv().TELEGRAM_BOT_TOKEN) return { ok: false, out: '먼저 봇 토큰을 저장하세요.' };
+      await sh('/bin/rm', ['-f', `${GSTATE}/STOPPED.bot`]);   // "켜라"는 의도 — supervisor 감독 대상으로 복귀
+      // 봇 프로세스가 죽어있으므로 남은 🤖 loops bot/⏹ loops bot 탭은 전부 잔재(cmux 재시작 복원 셸 등) — 스폰 전 회수.
+      try {
+        for (const l of execFileSync(CMUX, ['list-workspaces'], { encoding: 'utf8', timeout: 4000 }).split('\n')) {
+          const t = l.replace(/\s*\[selected\]\s*$/, '');
+          if (!t.includes('🤖 loops bot') && !t.includes('⏹ loops bot')) continue;
+          const m = t.match(/workspace:\d+/); if (m) await sh(CMUX, ['close-workspace', '--workspace', m[0]]);
+        }
+      } catch (e) { console.error('bot-start: 잔재 탭 정리 실패(무해, spawn 진행):', e.message); }
       const r = await sh(CMUX, ['new-workspace', '--cwd', ROOT, '--command', `node --watch ${ROOT}/bin/notify-bot.mjs`]);
       const m = (r.out || '').match(/workspace:\d+/); if (m) { await sh(CMUX, ['rename-workspace', '--workspace', m[0], '🤖 loops bot']); reorderBottom(m[0]); }
       return { ok: true, out: '🤖 봇 시작 (cmux 패널) — 페어링 안 됐으면 텔레그램에서 봇에게 메시지 보내세요' };
     }
-    case 'bot-stop': { execFile('/usr/bin/pkill', ['-f', `${ROOT}/bin/notify-bot.mjs`], () => {}); return { ok: true, out: '봇 중지' }; }
+    case 'bot-stop': { writeFileSync(`${GSTATE}/STOPPED.bot`, '');   /* 의도적 정지 마커 — supervisor가 재기동하지 않도록 */ execFile('/usr/bin/pkill', ['-f', `${ROOT}/bin/notify-bot.mjs`], () => {}); return { ok: true, out: '봇 중지' }; }
     case 'save-mission': { if (!lid) return { ok: false }; try { writeFileSync(`${LOOPS}/${lid}/mission.md`, p.content || ''); return { ok: true, out: 'mission 저장' }; } catch (e) { return { ok: false, out: '' + e }; } }
     case 'save-vision': { if (!lid) return { ok: false }; try { writeFileSync(`${LOOPS}/${lid}/vision.md`, p.content || ''); return { ok: true, out: 'vision 저장 (다음 run부터 주입)' }; } catch (e) { return { ok: false, out: '' + e }; } }
     case 'save-learnings': { if (!lid) return { ok: false }; try { mkdirSync(`${LOOPS}/${lid}/state`, { recursive: true }); writeFileSync(`${LOOPS}/${lid}/state/learnings.md`, p.content || ''); return { ok: true, out: 'learnings 저장 (다음 run부터 주입)' }; } catch (e) { return { ok: false, out: '' + e }; } }
@@ -429,3 +459,16 @@ const server = http.createServer((req, res) => {
 });
 server.listen(PORT, '127.0.0.1', () => console.log(`Loops dashboard → http://localhost:${PORT}`));
 refreshPRs(); setInterval(refreshPRs, 60000);
+
+// 자기 탭 기록(state/panel.dashboard.ref) — supervisor panels sweep이 "진짜 대시보드 탭"을 식별해 나머지 📊 잔재
+// (cmux 재시작 복원 셸 등)를 회수하는 근거. node --watch 재기동마다 재기록(같은 PTY라 동일 ref).
+// identify 실패(비 cmux 컨텍스트·플레이크) → 파일 제거 + 로그 — sweep은 파일 없으면 📊 정리를 skip(판정불가=skip 원칙).
+try {
+  const j = JSON.parse(execFileSync(CMUX, ['identify'], { encoding: 'utf8', timeout: 4000 }));
+  const ref = j && j.caller && j.caller.workspace_ref;
+  if (!/^workspace:\d+$/.test(ref || '')) throw new Error('caller.workspace_ref 없음');
+  writeFileSync(`${GSTATE}/panel.dashboard.ref`, ref);
+} catch (e) {
+  try { execFileSync('/bin/rm', ['-f', `${GSTATE}/panel.dashboard.ref`]); } catch {}
+  console.error('panel.dashboard.ref 기록 실패(sweep은 📊 정리 skip):', e.message);
+}

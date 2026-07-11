@@ -3,18 +3,38 @@
 // 밖(Telegram) ↔ 안(대시보드 127.0.0.1:PORT /api/status·/api/control)을 잇는 다리.
 //   · 아웃바운드: /api/status 를 주기적으로 diff → human-gate/PR/CI/사이클오류를 폰으로 push
 //   · 인바운드: getUpdates long-poll → 버튼 탭·답장·슬래시 명령 → /api/control
-// cmux 소켓은 쓰지 않는다(HTTP만). 모든 제어는 서버가 대신 수행 → 엔진 변경 0.
+// cmux 소켓은 제어에 쓰지 않는다(HTTP만; 유일 예외 = boot 시 1회 `cmux identify`로 자기 탭 기록). 모든 제어는 서버가 대신 수행 → 엔진 변경 0.
 // 안전 불변식: 봇은 merge/deploy/force-push 하지 않는다. 노출 파괴적 액션은 cancel/cleanup뿐이며 2탭 확인.
 import http from 'node:http';
 import https from 'node:https';
 import { readFileSync, writeFileSync, existsSync } from 'node:fs';
-import { execFile } from 'node:child_process';
+import { execFile, execFileSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 import { dirname } from 'node:path';
 
 const ROOT = process.env.LOOPS_HOME || dirname(dirname(fileURLToPath(import.meta.url)));
+
+// 이중 기동 가드: getUpdates는 단일 소비자 전제(중복 인스턴스 = 409 Conflict + 중복 발송). 자기 자신과
+// node --watch 워처(부모)는 제외. pgrep 자체가 실패하면 가드 없이 진행(가용성 우선 — 가드는 best-effort).
+try {
+  const others = execFileSync('/usr/bin/pgrep', ['-f', 'bin/notify-bot.mjs'], { encoding: 'utf8', timeout: 3000 })
+    .split('\n').filter(x => x && +x !== process.pid && +x !== (process.ppid || -1));
+  if (others.length) { console.error(`notify-bot: 이미 실행 중(pid ${others.join(',')}) — 중복 인스턴스 종료`); process.exit(0); }
+} catch { /* pgrep 실패/무매치 — 가드 스킵하고 기동 */ }
 function loadEnv() { const e = {}; try { for (const l of readFileSync(`${ROOT}/loops.env`, 'utf8').split('\n')) { const m = l.match(/^\s*([A-Z_]+)\s*=\s*(.*)$/); if (m) e[m[1]] = m[2].trim().replace(/^["']|["']$/g, ''); } } catch {} return e; }
 const ENV = loadEnv();
+// 자기 탭 기록(state/panel.bot.ref) — supervisor panels sweep이 "진짜 봇 탭"을 식별해 🤖 잔재(cmux 재시작 복원 셸)를
+// 회수하는 근거. identify 실패(비 cmux 컨텍스트·플레이크) → 파일 제거 + 로그 — sweep은 파일 없으면 🤖 정리 skip.
+try {
+  const cmuxBin = ENV.CMUX_BIN || process.env.CMUX_BIN || 'cmux';
+  const j = JSON.parse(execFileSync(cmuxBin, ['identify'], { encoding: 'utf8', timeout: 4000 }));
+  const ref = j && j.caller && j.caller.workspace_ref;
+  if (!/^workspace:\d+$/.test(ref || '')) throw new Error('caller.workspace_ref 없음');
+  writeFileSync(`${ROOT}/state/panel.bot.ref`, ref);
+} catch (e) {
+  try { execFileSync('/bin/rm', ['-f', `${ROOT}/state/panel.bot.ref`]); } catch {}
+  console.error('panel.bot.ref 기록 실패(sweep은 🤖 정리 skip):', e.message);
+}
 const PORT = +(ENV.LOOPS_PORT || process.env.LOOPS_PORT || 8422);
 const TOKEN = ENV.TELEGRAM_BOT_TOKEN || process.env.TELEGRAM_BOT_TOKEN || '';
 let CHAT = ENV.TELEGRAM_CHAT_ID || process.env.TELEGRAM_CHAT_ID || '';   // 런타임 갱신(페어링) → loops.env 영속화
