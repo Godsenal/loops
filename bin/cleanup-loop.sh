@@ -40,7 +40,7 @@ fi
 
 # 3. 이 루프의 cmux 탭(워커 🛠 / resume ↩) 전부 닫기.
 if [[ -n "$CMUX" ]]; then
-  refs="$("$CMUX" list-workspaces 2>/dev/null | grep -E "(🛠|↩)[[:space:]]+${LOOP}[[:space:]]" | grep -oE 'workspace:[0-9]+')"
+  refs="$("$CMUX" list-workspaces 2>/dev/null | grep -E "(🛠|↩|⏹)[[:space:]]+${LOOP}[[:space:]]" | grep -oE 'workspace:[0-9]+')"
   for r in ${(f)refs}; do "$CMUX" close-workspace --workspace "$r" >/dev/null 2>&1; done
 fi
 

@@ -77,7 +77,9 @@ typeset -A TAB_REF
 if [[ -n "$CMUX" ]]; then
   while IFS= read -r line; do
     ref="$(print -r -- "$line" | grep -oE 'workspace:[0-9]+' | head -1)"
-    id="$(print -r -- "$line" | awk '{print $NF}')"
+    # ⚠️ cmux는 현재 선택된 워크스페이스 줄 끝에 "[selected]"를 붙인다 — $NF를 그대로 쓰면 선택된 워커 탭의
+    #    이슈 ID가 "[selected]"로 오파싱된다(실제 사고: 리퍼가 산 워커 탭을 고아로 닫음). 마커 제거 후 마지막 토큰.
+    id="$(print -r -- "$line" | sed -E 's/[[:space:]]*\[selected\][[:space:]]*$//' | awk '{print $NF}')"
     [[ -z "$ref" || -z "$id" ]] && continue
     TAB_REF[$(slugof "$id")]="$ref"
   done < <("$CMUX" list-workspaces 2>/dev/null | grep -iE "(🛠|↩)[[:space:]]+${LOOP}[[:space:]]")
@@ -117,6 +119,18 @@ for sl in ${(k)STARTED}; do
   fi
   ref="${TAB_REF[$sl]:-}"
   if [[ -n "$ref" ]]; then
+    # ── 죽은 껍데기 탭 감지 (cmux 재시작 세션복원 등): worker-run이 남긴 pidfile의 프로세스가 죽었으면
+    #    이 탭은 타이틀(🛠|↩)만 남은 빈 쉘이다 — 산 것으로 오인하면 wedged 오탐 + heal 차단(GOD-28 사고).
+    #    탭을 닫고 pidfile을 걷은 뒤 이번 패스는 넘긴다 → 다음 패스(≤60s)에 "탭 없음+worktree 있음" 정상 경로로 heal.
+    #    pidfile이 없는 탭(구버전 워커·수동 resume)은 이 검사를 건너뛴다 — 오판으로 산 탭을 닫지 않게 보수적으로.
+    pidf="$STATE/live/$id.pid"
+    if [[ -f "$pidf" ]] && ! kill -0 "$(cat "$pidf" 2>/dev/null)" 2>/dev/null; then
+      "$CMUX" close-workspace --workspace "$ref" >/dev/null 2>&1
+      rm -f "$pidf"
+      echo "💀 watchdog $LOOP/$id — 탭은 있으나 worker 프로세스 죽음(cmux 재시작 복원 탭?) → 탭 닫음, 다음 패스에 heal 판정"
+      print -r -- "{\"ts\":$now,\"type\":\"worker\",\"event\":\"dead-tab-closed\",\"issue\":\"$id\"}" >> "$STATE/runs.jsonl"
+      (( waiting++ )); continue
+    fi
     # ── 탭 살아있음 → wedge(화면 정지) 검사 ──
     h="$("$CMUX" read-screen --workspace "$ref" --lines 24 2>/dev/null | shasum | awk '{print $1}')"
     if [[ -z "$h" ]]; then (( waiting++ )); continue; fi        # read-screen 실패(레이스) → 다음 패스로

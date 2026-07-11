@@ -5,6 +5,24 @@ source "${0:A:h}/_common.sh"
 LOOP="${LOOP_ID:?LOOP_ID 미설정}"
 ID="${LOOP_ISSUE:?LOOP_ISSUE 미설정}"
 ROOT="$LOOPS_HOME"
+STATE="$ROOT/loops/$LOOP/state"
+# 생존 pidfile + 종료 훅. cmux가 재시작되면 탭이 "타이틀만 남은 빈 쉘"로 세션 복원되는데, 엔진의 생존 판정이 탭 타이틀
+# 기반이라 죽은 워커가 산 것으로 오인된다(wedged 오탐 + heal 차단 — GOD-28 사고). 그래서:
+#   · pidfile: 워치독이 "탭은 있는데 프로세스는 죽음"을 판별하는 결정론적 근거 (kill -0).
+#   · 종료 시(정상/크래시 무관): pidfile 제거 + 탭 타이틀 ⏹로 변경 → 생존 신호(🛠|↩ 매칭)에서 즉시 제거 + exit 이벤트 기록.
+#     (claude가 turn을 멈추고 TUI로 idle인 동안은 프로세스가 살아있으므로 이 훅이 안 탄다 — 검토용 탭 유지 설계 그대로.)
+mkdir -p "$STATE/live"
+PIDFILE="$STATE/live/$ID.pid"; echo $$ > "$PIDFILE"
+CLAUDE_EXIT=""
+on_exit(){
+  rm -f "$PIDFILE" 2>/dev/null
+  print -r -- "{\"ts\":$(date '+%s'),\"type\":\"worker\",\"event\":\"exit\",\"issue\":\"$ID\",\"code\":${CLAUDE_EXIT:-null}}" >> "$STATE/runs.jsonl" 2>/dev/null
+  if [[ -n "${CMUX_BIN:-}" ]]; then
+    local wref="$("$CMUX_BIN" list-workspaces 2>/dev/null | grep -iE "(🛠|↩)[[:space:]]+${LOOP}[[:space:]]+${ID}([[:space:]]|\$)" | grep -oE 'workspace:[0-9]+' | head -1)"
+    [[ -n "$wref" ]] && "$CMUX_BIN" rename-workspace --workspace "$wref" "⏹ $LOOP $ID" 2>/dev/null
+  fi
+}
+trap on_exit EXIT
 PROMPT="$(node "$ROOT/bin/render-prompt.mjs" "$LOOP" worker)"
 # claude 실행 커맨드 (config.json claudeCmd / 대시보드 설정). 비면 기본 `claude`. headless 인자는 아래에서 항상 덧붙임.
 CLAUDE_CMD="$(cfgval "$ROOT/loops/$LOOP/config.json" claudeCmd)"; [[ -z "$CLAUDE_CMD" ]] && CLAUDE_CMD=claude
@@ -37,4 +55,5 @@ $REWORK_BLOCK}${DECISION:+
 사용자가 이 이슈의 human-gate를 직접 해제하고 아래 결정을 내렸다. 이 결정을 **최우선 지침**으로 따르라 — 이슈 본문의 \"human-gate/사람 판단 필요\" 표시는 이 결정으로 해소된 것으로 간주하고, 절차 2의 human-gate 중단을 하지 말고 구현을 진행하라. 시작 시 이 이슈를 Linear에서 In Progress로 옮기고, 이 결정 내용을 이슈에 코멘트로 남겨 기록하라.
 
 $DECISION}" --dangerously-skip-permissions
-echo "════════ 🛠 $LOOP worker $ID 종료  $(date '+%F %T') ════════"
+CLAUDE_EXIT=$?
+echo "════════ 🛠 $LOOP worker $ID 종료 (exit $CLAUDE_EXIT)  $(date '+%F %T') ════════"

@@ -10,7 +10,14 @@ ROOT="$LOOPS_HOME"; STATE=$ROOT/loops/$LOOP/state; CFG=$ROOT/loops/$LOOP/config.
 WTV="$PWD"
 REPO="$(cfgval "$CFG" repo)"
 # 종료 시(성공/실패 무관) 검증 worktree 자가 정리 — 크래시로 남으면 cleanup-issue.sh가 -vf도 함께 걷는다(2중 안전망).
-cleanup(){ cd "$REPO" 2>/dev/null && git worktree remove --force "$WTV" 2>/dev/null; }
+# 탭 타이틀도 ⏹로 — 끝난 탭이 🔎 dedup(spawn-verifier 중복 방지)을 막지 않게.
+cleanup(){
+  cd "$REPO" 2>/dev/null && git worktree remove --force "$WTV" 2>/dev/null
+  if [[ -n "${CMUX_BIN:-}" ]]; then
+    local wref="$("$CMUX_BIN" list-workspaces 2>/dev/null | grep -iE "🔎[[:space:]]+${LOOP}[[:space:]]+${ID}([[:space:]]|\$)" | grep -oE 'workspace:[0-9]+' | head -1)"
+    [[ -n "$wref" ]] && "$CMUX_BIN" rename-workspace --workspace "$wref" "⏹ $LOOP $ID" 2>/dev/null
+  fi
+}
 trap cleanup EXIT
 
 PROMPT="$(node "$ROOT/bin/render-prompt.mjs" "$LOOP" verifier)"

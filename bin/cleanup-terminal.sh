@@ -69,7 +69,9 @@ tab_n=0
 if [[ -n "$CMUX" ]]; then
   while IFS= read -r line; do
     ref="$(print -r -- "$line" | grep -oE 'workspace:[0-9]+' | head -1)"
-    id="$(print -r -- "$line" | awk '{print $NF}')"   # 제목 "🛠 <loop> <ID>" → ID가 마지막 토큰
+    # 제목 "🛠 <loop> <ID>" → ID가 마지막 토큰. ⚠️ 단, cmux는 선택된 워크스페이스 줄 끝에 "[selected]"를 붙인다 —
+    # 마커를 안 벗기면 선택된 산 워커 탭이 이슈 "[selected]"의 고아로 오인돼 닫힌다(실제 사고). 제거 후 파싱.
+    id="$(print -r -- "$line" | sed -E 's/[[:space:]]*\[selected\][[:space:]]*$//' | awk '{print $NF}')"
     [[ -z "$ref" || -z "$id" ]] && continue
     sl="$(slugof "$id")"
     TAB_REFS[$sl]+="$ref "; TAB_ID[$sl]="$id"; (( tab_n++ ))
