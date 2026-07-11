@@ -13,13 +13,12 @@ const prBase = cfg.prBase || 'develop';
 const delivery = cfg.delivery || 'pr';   // 'pr'(기본, PR만) | 'direct'(PR 없이 base에 직접 push)
 const vars = {
   LOOP_ID: cfg.id, LOOP_NAME: cfg.name, EMOJI: cfg.emoji || '🔁',
-  REPO: cfg.repo, BASE_REF: cfg.baseRef || 'origin/develop', PR_BASE: prBase,
-  LINEAR_PROJECT_ID: cfg.linearProjectId || '', LINEAR_PROJECT_URL: cfg.linearProjectUrl || '',
+  REPO: cfg.repo, BASE_REF: cfg.baseRef || 'origin/develop',
+  LINEAR_PROJECT_ID: cfg.linearProjectId || '',
   MAX_WORKERS: String(cfg.maxWorkers || 2),
   BACKLOG_TARGET: String(cfg.backlogTarget || 5),
   STATE_DIR: `${ROOT}/loops/${loopId}/state`,
   ORCH_WORKTREE: cfg.orchestratorWorktree || '',
-  WORKTREE_PREFIX: cfg.worktreePrefix || '',
   BRANCH_PREFIX: cfg.branchPrefix || `loop-${loopId}`,
   SPAWN_WORKER: `${ROOT}/bin/spawn-worker.sh ${loopId}`,
   REWORK_WORKER: `${ROOT}/bin/rework-worker.sh ${loopId}`,
