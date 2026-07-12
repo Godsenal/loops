@@ -34,11 +34,13 @@ ROOT="$LOOPS_HOME"; LOOPDIR=$ROOT/loops/$LOOP; STATE=$LOOPDIR/state; CFG=$LOOPDI
 REPO="$(cfgval "$CFG" repo)"; PREFIX="$(cfgval "$CFG" worktreePrefix)"; PID="$(cfgval "$CFG" linearProjectId)"
 BRPFX="$(cfgval "$CFG" branchPrefix)"; [[ -z "$BRPFX" ]] && BRPFX="loop-$LOOP"
 DELIVERY="$(cfgval "$CFG" delivery)"; [[ -z "$DELIVERY" ]] && DELIVERY=pr
+BASEREF="$(cfgval "$CFG" baseRef)"; [[ -z "$BASEREF" ]] && BASEREF=origin/develop   # 미머티리얼라이즈 시체의 "커밋 0" 판정 기준.
 CMUX="$CMUX_BIN"; GH="$GH_BIN"
 [[ -z "$REPO" || -z "$PREFIX" ]] && { echo "repo/worktreePrefix 없음 — skip"; exit 0; }
 HEAL_MAX=${LOOP_HEAL_MAX:-2}
 GRACE=${LOOP_WATCHDOG_GRACE_SEC:-90}
 WEDGE_SEC=${LOOP_WEDGE_SEC:-300}   # 화면이 이 시간 이상 불변이면 wedge로 표면화(진행중 claude는 타이머/스피너로 매초 화면이 변함).
+CORPSE_PASSES=${LOOP_CORPSE_PASSES:-3}   # 미머티리얼라이즈 시체 판정: pidfile 없음+커밋 0+빈 화면이 이 패스 수만큼 연속돼야 닫는다(플레이크 방어).
 LIVENESS="$STATE/liveness.json"
 
 # liveness.json 조작 (원자적 read-modify-write, 파싱 실패는 빈 객체로 안전 복구).
@@ -60,6 +62,34 @@ close_if_corpse(){ # $1=tab-ref $2=issue-id
   rm -f "$pidf"
   echo "💀 watchdog $LOOP/$id — 탭은 있으나 worker 프로세스 죽음(cmux 재시작 복원 탭?) → 탭 닫음"
   print -r -- "{\"ts\":$now,\"type\":\"worker\",\"event\":\"dead-tab-closed\",\"issue\":\"$id\"}" >> "$STATE/runs.jsonl"
+  return 0
+}
+
+# 미머티리얼라이즈 시체 탭 감지·폐기 (GOD-59): cmux lazy-PTY로 --command가 발화되지 않은 워커 탭은 worker-run.sh가
+# 한 줄도 안 돌아 pidfile이 없고(worker-run:15가 시작 즉시 기록하므로 부재=미실행), 화면이 렌더된 적 없어 read-screen이
+# 계속 빈 응답이며, worktree는 baseRef 그대로(커밋 0)다 — pidfile-corpse도 wedge도 heal도 못 잡는 사각(started+🛠탭+
+# pidfile 없음+빈 화면)이라 In Progress 슬롯을 영구 점유한다(GOD-37·47·52). 이 세 신호가 CORPSE_PASSES 패스 연속
+# 겹칠 때만 죽은 껍데기로 판정해 탭을 닫는다 → 다음 패스에서 "탭 없음+worktree 있음" 정상 heal 경로로 재기동된다.
+# 보수성(수용기준): pidfile이 있거나(=worker-run이 돎) 커밋이 하나라도 있거나(=진행분) 화면이 한 번이라도 non-empty면
+# (=렌더됨, 카운터가 리셋됨) 절대 대상 아님 — "느리지만 정상"인 워커를 죽이지 않는다. 빈 화면은 일시적 read 플레이크
+# 일 수도 있으나, 플레이크는 임계 전에 화면이 뜨거나 pidfile이 생겨 카운터가 리셋되므로 연속 임계를 못 넘는다.
+# 반환 0 = 시체를 닫음, 1 = 대상 아님/임계 미만(계속 관망). worktree 삭제/Linear 이동 없음(탭만 닫음).
+close_if_dead_shell(){ # $1=tab-ref $2=issue-id $3=slug
+  local ref="$1" id="$2" sl="$3" pidf="$STATE/live/$2.pid"
+  [[ -n "$ref" ]] || return 1
+  [[ -f "$pidf" ]] && return 1                                  # pidfile 있음 = worker-run 실행됨 → close_if_corpse 소관, 여기 아님
+  local wt="${PREFIX}-${sl}"
+  [[ -d "$wt" ]] || return 1                                    # worktree 없음 = 이 케이스 아님(유령 경로가 처리)
+  local ahead; ahead="$(git -C "$wt" rev-list --count "${BASEREF}..HEAD" 2>/dev/null)"
+  [[ "$ahead" == "0" ]] || return 1                             # 커밋≥1(또는 판정불가) = 진행분/불확실 → 절대 건드리지 않음(보수)
+  local n; n="$(lv_get "$id" noMatEmpty)"; [[ -z "$n" ]] && n=0; n=$(( n + 1 ))
+  if (( n < CORPSE_PASSES )); then
+    lv_set "$id" "{\"noMatEmpty\":$n}"; return 1                # 임계 미만 → 보류(연속 카운트 누적)
+  fi
+  "$CMUX" close-workspace --workspace "$ref" >/dev/null 2>&1
+  lv_set "$id" "{\"noMatEmpty\":0}"
+  echo "💀 watchdog $LOOP/$id — pidfile 없음·커밋 0·화면 ${n}패스 연속 빈응답 = 미머티리얼라이즈 시체 → 탭 닫음(다음 패스 heal)"
+  print -r -- "{\"ts\":$now,\"type\":\"worker\",\"event\":\"dead-shell-closed\",\"issue\":\"$id\"}" >> "$STATE/runs.jsonl"
   return 0
 }
 
@@ -148,10 +178,17 @@ for sl in ${(k)STARTED}; do
       (( waiting++ )); continue
     fi
     # ── 탭 살아있음 → wedge(화면 정지) 검사 ──
-    # ⚠️ read-screen 빈 응답은 "화면이 비었다"가 아니라 읽기 실패/플레이크다 — 빈 입력의 shasum은 상수라
-    #    그대로 해시하면 "정지"로 오탐된다(실제 사고: wedged 오탐 3건). 빈 응답 = 판정 불가 → 다음 패스로.
+    # ⚠️ read-screen 빈 응답은 "화면이 비었다"가 아니라 읽기 실패/플레이크 또는 미머티리얼라이즈다 — 빈 입력의 shasum은
+    #    상수라 그대로 해시하면 "정지"로 오탐된다(실제 사고: wedged 오탐 3건). 그래서 빈 응답은 여기서 해시하지 않는다.
     scr="$("$CMUX" read-screen --workspace "$ref" --lines 24 2>/dev/null)"
-    if [[ -z "$scr" ]]; then (( waiting++ )); continue; fi
+    if [[ -z "$scr" ]]; then
+      # 빈 응답이 연속되면 미머티리얼라이즈 시체일 수 있다(GOD-59) — pidfile 없음+커밋 0과 겹쳐 CORPSE_PASSES 연속이면
+      # 탭을 닫는다(다음 패스에 heal). 플레이크(일시적 빈 응답)는 임계 전 화면이 떠 아래 리셋으로 카운터가 풀린다.
+      close_if_dead_shell "$ref" "$id" "$sl"
+      (( waiting++ )); continue
+    fi
+    # 화면 non-empty = 렌더됨(머티리얼라이즈 확인) → 미머티리얼라이즈 연속 카운터 리셋(진짜 "연속"만 임계에 도달).
+    [[ -z "$(lv_get "$id" noMatEmpty)" ]] || lv_set "$id" "{\"noMatEmpty\":0}"
     h="$(print -r -- "$scr" | shasum | awk '{print $1}')"
     prevh="$(lv_get "$id" scrhash)"; prevat="$(lv_get "$id" scrAt)"
     if [[ "$h" != "$prevh" ]]; then
