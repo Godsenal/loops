@@ -7,10 +7,10 @@ import { readFileSync, writeFileSync, existsSync, readdirSync, mkdirSync, statSy
 import { execFile, execFileSync, spawn } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 import { dirname } from 'node:path';
+import { loadEnv, setEnvVar } from './bin/env-file.mjs';
 
 const ROOT = process.env.LOOPS_HOME || dirname(fileURLToPath(import.meta.url));
-function loadEnv() { const e = {}; try { for (const l of readFileSync(`${ROOT}/loops.env`, 'utf8').split('\n')) { const m = l.match(/^\s*([A-Z_]+)\s*=\s*(.*)$/); if (m) e[m[1]] = m[2].trim().replace(/^["']|["']$/g, ''); } } catch {} return e; }
-const ENV = loadEnv();
+const ENV = loadEnv(ROOT);
 const LOOPS = `${ROOT}/loops`;
 const GSTATE = `${ROOT}/state`;
 const CMUX = ENV.CMUX_BIN || process.env.CMUX_BIN || 'cmux';
@@ -29,7 +29,6 @@ const slugOf = (id) => String(id).toLowerCase().replace(/[^a-z0-9]+/g, '-').repl
 // ⚠️ worktree 경로 규칙 = bin/spawn-worker.sh의 WT="${PREFIX}-${slug}" 와 일치해야 함(source of truth). 이미 파싱된 cfg를 받는 순수 함수 — config 재-read 없음.
 const wtPath = (cfg, id) => `${cfg.worktreePrefix || ''}-${slugOf(id)}`;
 let LINEAR_KEY = ENV.LINEAR_API_KEY || process.env.LINEAR_API_KEY || '';   // 런타임 보유 — UI에서 즉시 갱신, loops.env에 영속화. status는 boolean만 노출.
-function setEnvVar(k, v) { const p = `${ROOT}/loops.env`; let t = readText(p); const ln = `${k}=${v}`; const re = new RegExp('^' + k + '=.*$', 'm'); t = re.test(t) ? t.replace(re, ln) : (t.replace(/\n?$/, '\n') + ln + '\n'); writeFileSync(p, t); }
 
 function listLoopIds() { try { return readdirSync(LOOPS).filter(d => existsSync(`${LOOPS}/${d}/config.json`)); } catch { return []; } }
 function tabsAll() {
@@ -47,7 +46,7 @@ function globalDispatcher() {
 function awakeStatus() { const t = readText(GAWAKE).trim(); const pid = t ? +t : null; return pid && pidAlive(pid) ? pid : null; }
 // Telegram 브리지(notify-bot) 상태 — 토큰/chat은 loops.env를 live로 다시 읽어 페어링을 즉시 반영, running은 pgrep. 비밀값은 노출 안 하고 boolean만.
 function botRunning() { try { execFileSync('/usr/bin/pgrep', ['-f', `${ROOT}/bin/notify-bot.mjs`], { timeout: 2000 }); return true; } catch { return false; } }
-function telegramStatus() { const e = loadEnv(); return { configured: !!(e.TELEGRAM_BOT_TOKEN || ''), paired: !!(e.TELEGRAM_CHAT_ID || ''), running: botRunning() }; }
+function telegramStatus() { const e = loadEnv(ROOT); return { configured: !!(e.TELEGRAM_BOT_TOKEN || ''), paired: !!(e.TELEGRAM_CHAT_ID || ''), running: botRunning() }; }
 function feedOf(st) { return readText(`${st}/runs.jsonl`).trim().split('\n').filter(Boolean).map(l => { try { return JSON.parse(l); } catch { return null; } }).filter(Boolean); }
 // 루프 경제성 집계 — costs.jsonl(run-once가 사이클마다 append) + 파생 counts + rework.json.
 // perMergedUsd = "머지된 변경 1건당 오케스트레이션 비용" (측정 범위는 headless 오케스트레이터 사이클 — 라이브 TUI 워커 비용은 미측정).
@@ -337,18 +336,18 @@ async function control(a, p) {
       const key = (p.key || '').trim();
       if (!key) return { ok: false, out: '키가 비었음' };
       LINEAR_KEY = key;
-      try { setEnvVar('LINEAR_API_KEY', key); } catch (e) { return { ok: false, out: 'loops.env 저장 실패: ' + e.message }; }
+      try { setEnvVar(ROOT, 'LINEAR_API_KEY', key); } catch (e) { return { ok: false, out: 'loops.env 저장 실패: ' + e.message }; }
       return { ok: true, out: 'Linear 키 저장됨 (즉시 적용 · 재시작 불필요)' };
     }
     case 'set-telegram': {   // UI에서 Telegram 봇 토큰 입력 → loops.env 영속화 (값은 되돌려주지 않음). chat-id는 봇이 첫 메시지에서 자동 페어링.
       const token = (p.token || '').trim();
       if (!token) return { ok: false, out: '토큰이 비었음' };
-      try { setEnvVar('TELEGRAM_BOT_TOKEN', token); } catch (e) { return { ok: false, out: 'loops.env 저장 실패: ' + e.message }; }
+      try { setEnvVar(ROOT, 'TELEGRAM_BOT_TOKEN', token); } catch (e) { return { ok: false, out: 'loops.env 저장 실패: ' + e.message }; }
       return { ok: true, out: '봇 토큰 저장됨 — "봇 시작" 후 텔레그램에서 봇에게 아무 메시지를 보내면 페어링됩니다.' };
     }
     case 'bot-start': {   // Telegram 브리지를 cmux 패널로 기동 (dashboard/dispatcher와 동일 방식). 봇은 /api/status·/api/control만 호출 — merge/deploy/force-push 없음.
       if (botRunning()) return { ok: true, out: '봇 이미 실행 중' };
-      if (!loadEnv().TELEGRAM_BOT_TOKEN) return { ok: false, out: '먼저 봇 토큰을 저장하세요.' };
+      if (!loadEnv(ROOT).TELEGRAM_BOT_TOKEN) return { ok: false, out: '먼저 봇 토큰을 저장하세요.' };
       await sh('/bin/rm', ['-f', `${GSTATE}/STOPPED.bot`]);   // "켜라"는 의도 — supervisor 감독 대상으로 복귀
       // 봇 프로세스가 죽어있으므로 남은 🤖 loops bot/⏹ loops bot 탭은 전부 잔재(cmux 재시작 복원 셸 등) — 스폰 전 회수.
       try {

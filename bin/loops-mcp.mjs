@@ -5,13 +5,12 @@
 // cmux·git·gh 는 만지지 않는다. 노출 툴은 안전 면(읽기 + 안전 쓰기)뿐:
 //   · 파괴적(cancel-issue/cleanup-issue)·merge/deploy/force-push 는 툴 자체를 두지 않아 구조적으로 불가능.
 import http from 'node:http';
-import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { dirname } from 'node:path';
+import { loadEnv } from './env-file.mjs';
 
 const ROOT = process.env.LOOPS_HOME || dirname(dirname(fileURLToPath(import.meta.url)));
-function loadEnv() { const e = {}; try { for (const l of readFileSync(`${ROOT}/loops.env`, 'utf8').split('\n')) { const m = l.match(/^\s*([A-Z_]+)\s*=\s*(.*)$/); if (m) e[m[1]] = m[2].trim().replace(/^["']|["']$/g, ''); } } catch {} return e; }
-const ENV = loadEnv();
+const ENV = loadEnv(ROOT);
 const PORT = +(ENV.LOOPS_PORT || process.env.LOOPS_PORT || 8422);
 
 // ── 로컬 대시보드 HTTP (127.0.0.1 → basic-auth 자동 통과, notify-bot.api 와 동일) ──

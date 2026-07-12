@@ -11,6 +11,7 @@ import { readFileSync, writeFileSync, existsSync } from 'node:fs';
 import { execFile, execFileSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 import { dirname } from 'node:path';
+import { loadEnv, setEnvVar } from './env-file.mjs';
 
 const ROOT = process.env.LOOPS_HOME || dirname(dirname(fileURLToPath(import.meta.url)));
 
@@ -21,8 +22,7 @@ try {
     .split('\n').filter(x => x && +x !== process.pid && +x !== (process.ppid || -1));
   if (others.length) { console.error(`notify-bot: 이미 실행 중(pid ${others.join(',')}) — 중복 인스턴스 종료`); process.exit(0); }
 } catch { /* pgrep 실패/무매치 — 가드 스킵하고 기동 */ }
-function loadEnv() { const e = {}; try { for (const l of readFileSync(`${ROOT}/loops.env`, 'utf8').split('\n')) { const m = l.match(/^\s*([A-Z_]+)\s*=\s*(.*)$/); if (m) e[m[1]] = m[2].trim().replace(/^["']|["']$/g, ''); } } catch {} return e; }
-const ENV = loadEnv();
+const ENV = loadEnv(ROOT);
 // 자기 탭 기록(state/panel.bot.ref) — supervisor panels sweep이 "진짜 봇 탭"을 식별해 🤖 잔재(cmux 재시작 복원 셸)를
 // 회수하는 근거. identify 실패(비 cmux 컨텍스트·플레이크) → 파일 제거 + 로그 — sweep은 파일 없으면 🤖 정리 skip.
 try {
@@ -55,8 +55,6 @@ const AGENT_SYSTEM = [
 
 const log = (...a) => console.log(new Date().toISOString().slice(11, 19), ...a);
 const readJSON = (p) => { try { return JSON.parse(readFileSync(p, 'utf8')); } catch { return null; } };
-// loops.env 의 키를 갱신-또는-추가(dashboard-server.setEnvVar 와 동일 규칙). preserved 키라 재설치에도 보존됨.
-function setEnvVar(k, v) { const p = `${ROOT}/loops.env`; let t = ''; try { t = readFileSync(p, 'utf8'); } catch {} const ln = `${k}=${v}`; const re = new RegExp('^' + k + '=.*$', 'm'); t = re.test(t) ? t.replace(re, ln) : (t.replace(/\n?$/, '\n') + ln + '\n'); writeFileSync(p, t); }
 const esc = (s) => String(s == null ? '' : s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
 
 // ── notify.json: 이미 보낸 신호(seen) + 답장용 pending(msgId→{loop,issue}) 영속 ──
@@ -422,7 +420,7 @@ async function handleUpdate(u) {
   const chatId = u.callback_query ? u.callback_query.message?.chat?.id : u.message?.chat?.id;
   // 페어링: chat-id 미설정이면 첫 메시지의 chat을 캡처·영속화
   if (!CHAT) {
-    if (u.message && chatId != null) { CHAT = String(chatId); setEnvVar('TELEGRAM_CHAT_ID', CHAT); log('페어링 완료 → chat', CHAT); await send('✅ 연결됨! 이제 이 대화로 알림이 오고, 여기서 전부 제어할 수 있어요.\n💬 그냥 말로 하세요 — 진짜 에이전트가 멀티스텝으로 처리해요: "지금 뭐 돌아가?", "seo에 태스크 추가하고 바로 작업 시작해". 탭이 편하면 🕹 /menu. (/help)'); }
+    if (u.message && chatId != null) { CHAT = String(chatId); setEnvVar(ROOT, 'TELEGRAM_CHAT_ID', CHAT); log('페어링 완료 → chat', CHAT); await send('✅ 연결됨! 이제 이 대화로 알림이 오고, 여기서 전부 제어할 수 있어요.\n💬 그냥 말로 하세요 — 진짜 에이전트가 멀티스텝으로 처리해요: "지금 뭐 돌아가?", "seo에 태스크 추가하고 바로 작업 시작해". 탭이 편하면 🕹 /menu. (/help)'); }
     return;
   }
   // chat-id 잠금(인증): 등록된 chat 외의 요청은 무시
