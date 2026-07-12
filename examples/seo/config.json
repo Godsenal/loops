@@ -13,5 +13,12 @@
   "maxWorkers": 2,
   "backlogTarget": 5,
   "schedule": { "startAt": null, "intervalSec": 7200 },
-  "enabled": false
+  "enabled": false,
+  "claudeCmd": "",
+  "delivery": "pr",
+  "verify": false,
+  "validate": false,
+  "budget": { "dailyUsd": null },
+  "on": { "ciFailure": false, "prReview": false, "linearNew": false },
+  "retro": { "everyCycles": 0 }
 }
