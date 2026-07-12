@@ -136,45 +136,45 @@ h1{letter-spacing:-.4px;font-weight:700}
 <dialog id="smodal" class="lmodal" closedby="any"><div class="hd"><b id="stitle"></b><button aria-label="닫기" onclick="closeS()">✕</button></div><pre id="sbody"></pre></dialog>
 <dialog id="cmodal" class="lmodal" closedby="any"><div class="hd"><b>새 loop 만들기</b><button aria-label="닫기" onclick="closeC()">✕</button></div><div class="body">
  <div class="sec">🤖 AI로 만들기 (추천)</div>
- <textarea id="c_desc" placeholder="예: 웹뷰 리팩토링 루프 만들어줘 — webview의 거대 컴포넌트 분리하고 중복 로직 정리"></textarea>
+ <textarea id="c_desc" aria-label="AI 루프 생성 프롬프트" placeholder="예: 웹뷰 리팩토링 루프 만들어줘 — webview의 거대 컴포넌트 분리하고 중복 로직 정리"></textarea>
  <div class="row" style="margin:8px 0 16px"><button class="p" onclick="buildLoop()">🤖 Claude로 생성</button> <span class="muted">탭에서 몇 가지 선택지(아키타입·repo·강도)에 답하면 mission·Linear·설정 구성 — "다 맡김"도 가능</span></div>
  <div class="sec">또는 직접 입력</div>
- <div class="fld"><label>id</label><input id="c_id" placeholder="dead-code"></div>
- <div class="fld"><label>이름</label><input id="c_name" placeholder="Dead Code 정리"></div>
- <div class="fld"><label>emoji</label><input id="c_emoji" placeholder="🧹"></div>
- <div class="fld"><label>repo 경로</label><input id="c_repo" placeholder="/abs/path/to/your/repo"></div>
- <div class="fld"><label>Linear projectId</label><input id="c_pid" placeholder="UUID (Linear 프로젝트)"></div>
- <div class="fld"><label>인터벌(분)</label><input id="c_iv" value="120"></div>
+ <div class="fld"><label for="c_id">id</label><input id="c_id" placeholder="dead-code"></div>
+ <div class="fld"><label for="c_name">이름</label><input id="c_name" placeholder="Dead Code 정리"></div>
+ <div class="fld"><label for="c_emoji">emoji</label><input id="c_emoji" placeholder="🧹"></div>
+ <div class="fld"><label for="c_repo">repo 경로</label><input id="c_repo" placeholder="/abs/path/to/your/repo"></div>
+ <div class="fld"><label for="c_pid">Linear projectId</label><input id="c_pid" placeholder="UUID (Linear 프로젝트)"></div>
+ <div class="fld"><label for="c_iv">인터벌(분)</label><input id="c_iv" value="120"></div>
  <div class="sec">mission (메인 프롬프트 — 무슨 일을 어떻게 찾는가)</div>
- <textarea id="c_mission" placeholder="이 루프가 발굴할 작업과 방법을 적으세요."></textarea>
+ <textarea id="c_mission" aria-label="mission (메인 프롬프트)" placeholder="이 루프가 발굴할 작업과 방법을 적으세요."></textarea>
  <div class="row" style="margin-top:10px"><button class="p" onclick="createLoop()">생성</button> <span class="muted">생성 후 off — 사이드바에서 켜세요.</span></div>
 </div></dialog>
 <dialog id="gmodal" class="lmodal" closedby="any"><div class="hd"><b id="gtitle"></b><button aria-label="닫기" onclick="closeG()">✕</button></div><div class="body">
  <div id="gctx" style="background:var(--card);border:1px solid var(--border);border-left:3px solid var(--warning);border-radius:var(--radius-sm);padding:10px 12px;margin-bottom:10px;font-size:13px;line-height:1.5"></div>
  <p class="muted" style="margin:0 0 8px">위 내용을 보고 <b>결정</b>을 적으세요. 워커가 이 지침을 최우선으로 따라 구현합니다 (이슈 본문의 human-gate는 해제됨). 보류/취소하려면 그렇게 적으면 됩니다.</p>
- <textarea id="g_decision" style="width:100%;height:120px" placeholder="예: 매물종류 화이트리스트는 아파트·오피스텔·원룸만. server sitemap spec이 실제 발행하는 조합만 링크할 것.&#10;또는: 이 BE 작업(ProptierDanji.nearbyPreschools)은 지금 보류 — 진행하지 말 것."></textarea>
+ <textarea id="g_decision" aria-label="결정 내용" style="width:100%;height:120px" placeholder="예: 매물종류 화이트리스트는 아파트·오피스텔·원룸만. server sitemap spec이 실제 발행하는 조합만 링크할 것.&#10;또는: 이 BE 작업(ProptierDanji.nearbyPreschools)은 지금 보류 — 진행하지 말 것."></textarea>
  <div class="row" style="margin-top:10px"><button class="p" onclick="submitGate()">승인하고 워커 진행 ▶</button> <span class="muted">결정이 기록되고 즉시 워커 탭이 뜹니다.</span></div>
 </div></dialog>
 <dialog id="omodal" class="lmodal" closedby="any"><div class="hd"><b id="otitle">설정</b><span style="flex:1"></span><span id="oflash" class="live" style="margin-right:12px;font-size:12px"></span><button aria-label="닫기" onclick="closeO()">✕</button></div><div class="body">
  <div class="sec">⏱ 스케줄</div>
- <div class="row"><span class="muted">시작</span> <input id="startAt" type="time"> <span class="muted">인터벌</span> <input id="ivMin" type="number" min="1" style="width:80px"> 분 <button class="p" onclick="setSched()">적용</button> <span id="schedinfo" class="muted"></span></div>
+ <div class="row"><span class="muted">시작</span> <input id="startAt" type="time" aria-label="스케줄 시작 시각"> <span class="muted">인터벌</span> <input id="ivMin" type="number" min="1" style="width:80px" aria-label="스케줄 인터벌(분)"> 분 <button class="p" onclick="setSched()">적용</button> <span id="schedinfo" class="muted"></span></div>
  <div class="sec">🧭 vision <span class="muted" style="font-size:11px;font-weight:400">제품 방향(타겟 유저·북극성·non-goals) — 사람 소유, 발굴·검증·retro의 정렬 기준으로 주입 (제안형 루프용, 비우면 미주입)</span> <button class="p" onclick="saveVision()" style="float:right">저장</button></div>
- <textarea id="visionbox" style="height:100px" placeholder="(선택) 타겟 유저 · 북극성 지표 · 핵심 자산 · non-goals — 제안이 이 방향에 안 맞으면 발굴/검증에서 걸러집니다."></textarea>
+ <textarea id="visionbox" aria-label="vision (제품 방향)" style="height:100px" placeholder="(선택) 타겟 유저 · 북극성 지표 · 핵심 자산 · non-goals — 제안이 이 방향에 안 맞으면 발굴/검증에서 걸러집니다."></textarea>
  <div class="sec">📝 mission (메인 프롬프트) <button class="p" onclick="saveMission()" style="float:right">저장 ⌘S</button></div>
- <textarea id="missionbox" style="height:200px"></textarea>
+ <textarea id="missionbox" aria-label="mission (메인 프롬프트)" style="height:200px"></textarea>
  <div class="sec">🧠 learnings <span class="muted" style="font-size:11px;font-weight:400">retro가 성과 데이터에서 추출한 교훈 — 매 run 프롬프트에 주입 (mission은 불변)</span> <span style="float:right"><button onclick="runRetro()" title="지금 성과 분석을 돌려 learnings.md 갱신 (config retro.everyCycles로 자동 주기 설정)">🧠 retro 실행</button> <button class="p" onclick="saveLearnings()">저장</button></span></div>
- <textarea id="learningsbox" style="height:120px" placeholder="(아직 교훈 없음 — retro가 채우거나 직접 적으세요. 1줄=교훈 1개+근거, 최대 15줄)"></textarea>
+ <textarea id="learningsbox" aria-label="learnings (retro 교훈)" style="height:120px" placeholder="(아직 교훈 없음 — retro가 채우거나 직접 적으세요. 1줄=교훈 1개+근거, 최대 15줄)"></textarea>
  <div class="sec">⚙️ config <button class="p" onclick="saveConfig()" style="float:right">저장</button></div>
  <div id="cfgform"></div>
- <details style="margin-top:10px"><summary class="muted" style="cursor:pointer;font-size:12px">고급 — raw JSON 직접 편집 (위 폼에 없는 필드까지)</summary><textarea id="cfgbox" style="height:200px;margin-top:8px"></textarea><div><button onclick="saveConfigRaw()" style="margin-top:6px">raw JSON 저장</button></div></details>
+ <details style="margin-top:10px"><summary class="muted" style="cursor:pointer;font-size:12px">고급 — raw JSON 직접 편집 (위 폼에 없는 필드까지)</summary><textarea id="cfgbox" aria-label="config raw JSON" style="height:200px;margin-top:8px"></textarea><div><button onclick="saveConfigRaw()" style="margin-top:6px">raw JSON 저장</button></div></details>
  <div class="sec" style="border-top:1px solid var(--border);padding-top:12px;margin-top:14px"><button class="d" onclick="delLoop()">🗑 이 loop 삭제</button> <span class="muted">config/mission/state만 제거 (worktree·Linear·PR 보존)</span></div>
 </div></dialog>
 <dialog id="wsmodal" class="lmodal" closedby="any"><div class="hd"><b>⚙️ 워크스페이스 설정 <span class="muted" style="font-weight:400;font-size:12px">· 전역</span></b><span style="flex:1"></span><span id="wsflash" class="live" style="margin-right:12px;font-size:12px"></span><button aria-label="닫기" onclick="closeWS()">✕</button></div><div class="body">
  <div class="sec">Linear API 키 <span class="muted" style="font-size:11px;font-weight:400">버리기·이슈정리 기능용</span><span id="linkeystat" class="muted" style="float:right;font-size:12px"></span></div>
- <div class="row"><input id="linearkeybox" type="password" placeholder="lin_api_… 붙여넣기" style="flex:1;width:auto;font-family:var(--mono)"> <button class="p" onclick="saveLinearKey()">저장</button></div>
+ <div class="row"><input id="linearkeybox" type="password" aria-label="Linear API 키" placeholder="lin_api_… 붙여넣기" style="flex:1;width:auto;font-family:var(--mono)"> <button class="p" onclick="saveLinearKey()">저장</button></div>
  <div class="muted" style="font-size:11px;margin-top:4px">Linear → Settings → Security &amp; access → Personal API keys. 저장 즉시 적용(재시작 불필요), loops.env(gitignore)에 보관 · 값은 다시 표시 안 함.</div>
  <div class="sec" style="margin-top:20px">Telegram 원격 봇 <span class="muted" style="font-size:11px;font-weight:400">폰 알림 + 원격제어</span><span id="tgstat" class="muted" style="float:right;font-size:12px"></span></div>
- <div class="row"><input id="tgtokenbox" type="password" placeholder="BotFather 봇 토큰 붙여넣기" style="flex:1;width:auto;font-family:var(--mono)"> <button class="p" onclick="saveTelegram()">저장</button></div>
+ <div class="row"><input id="tgtokenbox" type="password" aria-label="Telegram 봇 토큰" placeholder="BotFather 봇 토큰 붙여넣기" style="flex:1;width:auto;font-family:var(--mono)"> <button class="p" onclick="saveTelegram()">저장</button></div>
  <div class="row" style="margin-top:8px"><button class="p" onclick="botStart()">▶ 봇 시작</button> <button class="d" onclick="botStop()">■ 중지</button> <span id="tgrun" class="muted" style="font-size:12px"></span></div>
  <div class="muted" style="font-size:11px;margin-top:4px">@BotFather → /newbot → 토큰 저장 → ▶ 봇 시작 → 봇에게 아무 메시지 = 페어링. 이후 게이트에 답장으로 결정·버튼 탭. loops.env(gitignore) 보관 · 값 재표시 안 함. (대시보드가 떠 있어야 알림 동작)</div>
 </div></dialog>
@@ -303,7 +303,7 @@ function openSettings(){var L=lastData&&lastData.loops.find(function(x){return x
  fetch('/api/mission?loop='+sel+'&learnings=1').then(function(r){return r.text();}).then(function(t){document.getElementById('learningsbox').value=t;});
  fetch('/api/mission?loop='+sel+'&vision=1').then(function(r){return r.text();}).then(function(t){document.getElementById('visionbox').value=t;});
  fetch('/api/config?loop='+sel).then(function(r){return r.text();}).then(function(t){document.getElementById('cfgbox').value=t;var cfg={};try{cfg=JSON.parse(t);}catch(e){}
-  document.getElementById('cfgform').innerHTML=CFG_FIELDS.map(function(f){var v=cfg[f.k]==null?(f.def!=null?f.def:''):cfg[f.k];var ctrl;if(f.type==='select'){ctrl='<select id="cf_'+f.k+'">'+f.options.map(function(op){return '<option value="'+esc(op)+'"'+(String(v)===op?' selected':'')+'>'+esc(op)+'</option>';}).join('')+'</select>';}else{ctrl='<input id="cf_'+f.k+'"'+(f.type==='number'?' type="number" min="1"':'')+' value="'+esc(v)+'">';}return '<div class="fld"><label title="'+esc(f.hint||'')+'">'+f.label+'</label>'+ctrl+(f.hint?' <span class="muted" style="font-size:11px">'+esc(f.hint)+'</span>':'')+'</div>';}).join('');});}
+  document.getElementById('cfgform').innerHTML=CFG_FIELDS.map(function(f){var v=cfg[f.k]==null?(f.def!=null?f.def:''):cfg[f.k];var ctrl;if(f.type==='select'){ctrl='<select id="cf_'+f.k+'">'+f.options.map(function(op){return '<option value="'+esc(op)+'"'+(String(v)===op?' selected':'')+'>'+esc(op)+'</option>';}).join('')+'</select>';}else{ctrl='<input id="cf_'+f.k+'"'+(f.type==='number'?' type="number" min="1"':'')+' value="'+esc(v)+'">';}return '<div class="fld"><label for="cf_'+f.k+'" title="'+esc(f.hint||'')+'">'+f.label+'</label>'+ctrl+(f.hint?' <span class="muted" style="font-size:11px">'+esc(f.hint)+'</span>':'')+'</div>';}).join('');});}
 function closeO(){document.getElementById('omodal').close();}
 function openWS(){document.getElementById('linearkeybox').value='';document.getElementById('linkeystat').textContent=(lastData&&lastData.linearKey)?'✓ 설정됨':'⚠️ 미설정';var tg=(lastData&&lastData.telegram)||{};document.getElementById('tgtokenbox').value='';document.getElementById('tgstat').textContent=tg.configured?(tg.paired?'✓ 연결됨':'⏳ 페어링 대기'):'⚠️ 미설정';document.getElementById('tgrun').textContent=tg.running?'● 실행 중':'○ 정지';document.getElementById('wsmodal').showModal();}
 function closeWS(){document.getElementById('wsmodal').close();}
