@@ -80,6 +80,7 @@
   - 대안 생성 1개 의무: 같은 기회를 더 싸게 검증하는 축소안.
 - **산출:** 판정(🟢 강화 / 🟡 조건부 — 축소안 제시 / 🔴 기각 권고) + 근거를 이슈 코멘트 + `state/validate/<ISSUE>.json`. 스냅샷의 `gate.ask`에 판정 요약이 병기되어 대시보드·Telegram 게이트 UI에 그대로 뜬다.
 - (opt-in) **교차 모델 2차 의견** — office-hours Phase 3.5 패턴. codex CLI가 있으면 반대 심문 1회. config `"validate": {"crossModel": true}`.
+  - ⚠️ **미구현 — L3 "M3부터 미착수" 범위의 미래 스펙.** 이 object 형태를 **실제 config에 복붙하지 말 것**: 현행 파서(`run-once.sh`·`spawn-validator.sh`)는 `validate`를 boolean으로만 읽어, `cfgval`가 object를 `"[object Object]"`로 반환 → `!= "true"` → **validation이 조용히 꺼진다**. 지금 유효한 형태는 `"validate": true`뿐이며, crossModel 도입 시 이 파싱도 함께 구현해야 한다.
 
 ## 5. 스펙/분해 스테이지 — 분해 워커 (spec 증류)
 
