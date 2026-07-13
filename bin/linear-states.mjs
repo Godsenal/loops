@@ -2,7 +2,7 @@
 // Linear 프로젝트의 모든 이슈 상태를 출력한다(의존성 0, 공유 linearGql 헬퍼).
 // usage: linear-states.mjs <projectId>   (env: LINEAR_API_KEY)
 // 출력: 한 줄에 "<identifier>\t<statusType>"  (statusType: backlog|unstarted|started|completed|canceled|triage)
-// 키 없거나 실패하면 빈 stdout + 비0 종료 — 호출자(cleanup-terminal.sh)가 폴백 신호로 진행한다.
+// 키 없거나 실패하면 빈 stdout + 비0 종료 — 호출자(cleanup-terminal·watchdog·event-poll)가 폴백/보류 신호로 처리한다.
 // 실패(응답 이상·JSON 오류·네트워크·타임아웃)는 stderr에 원인 1줄을 남긴다 — stdout 계약·비0 종료는 불변.
 import { linearGql } from './linear-gql.mjs';
 
