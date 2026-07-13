@@ -60,7 +60,7 @@ loopctl start                           # 디스패처
 
 **쓰는 법 — 그냥 말로.** "지금 뭐 돌아가?", "myapp 한번 돌려", "GOD-8 그냥 진행해", "그거 취소해" 처럼 자연어로 보내면 봇이 `claude`(빠른 모델)로 의도를 파악해 실행한다(현재 상태를 컨텍스트로 줘서 loop/issue id를 알아서 고름). 파괴적 작업(취소·정리)은 바로 실행하지 않고 **확인 버튼**으로 되묻는다.
 
-탭이 편하면 **`/menu`** — 디스패처(시작/정지/일시정지/잠자기방지) → 루프(⚡실행/🧹PR정리/⏸정지/🔀on-off/📋작업) → 작업(✅진행/🗑취소/🧹정리/🔗PR). 🔴 게이트 알림엔 **답장으로 결정**을 적어도 된다. 슬래시도 있음: `/status` `/gates` `/resolve <ISSUE> <결정>` `/cancel` `/runnow <loop>` `/dispatcher start|stop` `/awake on|off` … (`/help`). 인증은 페어링된 chat-id 잠금. (자연어는 메시지마다 `claude` 1회 호출 — 몇 초 지연·토큰 비용; 모델은 `loops.env`의 `LOOPS_BOT_MODEL`로 변경)
+탭이 편하면 **`/menu`** — 디스패처(시작/정지/일시정지/잠자기방지) → 루프(⚡실행/🧹PR정리/⏸정지/🔀on-off/📋작업) → 작업(✅진행/🗑취소/🧹정리/🔗PR). 🔴 게이트 알림엔 **답장으로 결정**을 적어도 된다. 슬래시도 있음: `/status` `/gates` `/resolve <ISSUE> <결정>` `/cancel` `/runnow <loop>` `/dispatcher start|stop` `/awake on|off` … (`/help`). 인증은 페어링된 chat-id 잠금. (자연어는 메시지마다 `claude` 1회 호출 — 몇 초 지연·토큰 비용; 모델은 `loops.env`의 `LOOPS_BOT_AGENT_MODEL`로 변경)
 
 ## loop 만들기
 - **AI**: 대시보드 `+ 새 loop` → 한 줄 설명 → `Claude로 생성`. (또는 Claude Code 세션에서 "X 루프 만들어줘" — `create-loop` 스킬)
