@@ -269,7 +269,7 @@ function renderBody(d,L){
   +((L.mergedInReview>0||L.closedInReview>0)?'<button class="p" onclick="reconcile(\''+L.id+'\','+(L.mergedInReview+(L.closedInReview||0))+')">🧹 PR 정리 '+(L.mergedInReview+(L.closedInReview||0))+'건</button>':'')
   +'<button onclick="ctl(\''+(L.paused?'loop-resume':'loop-pause')+'\')">'+(L.paused?'▶ 재개':'⏸ 일시정지')+'</button>'
   +'<button onclick="ctl(\'toggle-enabled\')">'+(L.enabled?'끄기':'켜기')+'</button>'
-  +(L.linearProjectUrl?'<a href="'+esc(L.linearProjectUrl)+'" target=_blank><button>Linear↗</button></a>':'')
+  +(L.linearProjectUrl?'<button onclick="window.open(\''+esc(L.linearProjectUrl)+'\',\'_blank\',\'noopener\')">Linear↗</button>':'')
   +'<button onclick="viewLog(\''+L.id+'\')">orch 로그</button>'
   +'<button class="p" onclick="openSettings()">⚙️ 설정</button></div></div>';
  var cap=L.maxWorkers||2,inflight=(c['In Progress']||0)+(c['In Review']||0),capacity=cap-inflight;
