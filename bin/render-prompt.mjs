@@ -1,12 +1,12 @@
 #!/usr/bin/env node
 // 루프의 base 프롬프트 + mission + config 값을 합쳐 최종 프롬프트를 stdout으로.
-// usage: render-prompt.mjs <loop-id> [orchestrator|worker|verifier]
+// usage: render-prompt.mjs <loop-id> [orchestrator|worker|verifier|validator|retro]
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { dirname } from 'node:path';
 const ROOT = process.env.LOOPS_HOME || dirname(dirname(fileURLToPath(import.meta.url)));
 const [, , loopId, which = 'orchestrator'] = process.argv;
-if (!loopId) { console.error('usage: render-prompt.mjs <loop-id> [orchestrator|worker]'); process.exit(1); }
+if (!loopId) { console.error('usage: render-prompt.mjs <loop-id> [orchestrator|worker|verifier|validator|retro]'); process.exit(1); }
 const cfg = JSON.parse(readFileSync(`${ROOT}/loops/${loopId}/config.json`, 'utf8'));
 let tpl = readFileSync(`${ROOT}/bin/${which}-base.md`, 'utf8');
 const prBase = cfg.prBase || 'develop';
