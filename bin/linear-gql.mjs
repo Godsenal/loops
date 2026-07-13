@@ -1,4 +1,4 @@
-// Linear GraphQL POST를 Promise로 래핑한 공유 헬퍼. 의존성 0 (Node 내장 https만). 호출처: linear-create.mjs·linear-move.mjs.
+// Linear GraphQL POST를 Promise로 래핑한 공유 헬퍼. 의존성 0 (Node 내장 https만). 호출처: linear-create.mjs·linear-move.mjs·linear-states.mjs.
 // ⚠️ key는 반드시 호출자가 검증해 인자로 넘긴다 — 이 모듈은 env를 직접 안 읽는다(no-silent-fallback: 키 검증·명시적 실패 규약은 호출부에 보존).
 // 성공: GraphQL data 객체로 resolve. 실패(j.errors·JSON 파싱·네트워크·타임아웃 15s): Error로 reject — 호출자가 처리.
 import https from 'node:https';
