@@ -34,7 +34,7 @@ loopctl start                           # 디스패처
 
 ### 명령
 ```
-런타임   loopctl dashboard | start | stop | pause | resume | status | run-now <loop>
+런타임   loopctl dashboard | start | stop | pause | resume | status | run-now <loop> | update
 정리     loopctl worktrees <loop>           종료 이슈 잔여 worktree 진단(읽기전용)
          loopctl cleanup <loop> [--dry]     종료(Done/Canceled) worktree·탭·브랜치 정리
 점검     loopctl doctor | help
@@ -92,7 +92,7 @@ loopctl start                           # 디스패처
 | `enabled` | `false`면 스케줄 발사 안 함. 신규 loop은 `false`로 시작. | `false` | 선택(기본 `true`) |
 | `verify` | `true`면 worker가 PR을 연 직후 **별도 fresh-context 검증자**(maker/checker 분리)가 이슈 수용 기준으로 PR을 채점해 verdict(✅/⚠️/❌)를 PR·Linear에 코멘트. ❌면 재작업 자동 트리거. 검증자는 Edit/Write가 구조적으로 차단됨(코드 못 고침). pr 모드 전용. | `true` | 선택(기본 `false`) |
 | `validate` | `true`면 매 사이클 후 **미판정 human-gate 제안 이슈**마다 별도 fresh-context **제안 검증자**(🧪 validator)가 근거를 실물 재현·심문(수요 진단·전제 도전·축소안 1개)해 판정(🟢 strengthen/🟡 narrow/🔴 reject)을 Linear 코멘트 + 게이트 UI(대시보드·Telegram)에 병기. 제안형(PM) 루프용 — 승인/기각은 여전히 사람. Edit/Write 구조 차단. `vision.md`가 있으면 정렬 기준으로 주입. | `true` | 선택(기본 `false`) |
-| `budget.dailyUsd` | 일일 비용 소프트 캡(USD). 오늘 `costs.jsonl` 합계가 캡 이상이면 dispatcher가 **다음 사이클만 skip**(진행 중 worker는 안 죽임), 자정 리셋 후 자동 재개. 측정 범위=headless 사이클(오케스트레이터·retro·검증자). | `5` | 선택(기본 없음=무제한) |
+| `budget.dailyUsd` | 일일 비용 소프트 캡(USD). 오늘 `costs.jsonl` 합계가 캡 이상이면 dispatcher가 **다음 사이클만 skip**(진행 중 worker는 안 죽임), 자정 리셋 후 자동 재개. 측정 범위=headless 사이클(오케스트레이터·retro·검증자·validator). | `5` | 선택(기본 없음=무제한) |
 | `on.ciFailure` | `true`면 `prBase` 브랜치에 **새 CI 실패** 등장 시 interval을 기다리지 않고 즉시 사이클 발사. | `true` | 선택(기본 `false`) |
 | `on.prReview` | `true`면 이 루프의 열린 PR에 **새 사람 리뷰** 제출 시 즉시 사이클 발사(리뷰 반영 지연 단축). | `true` | 선택(기본 `false`) |
 | `on.linearNew` | `true`면 Linear 프로젝트에 **새 Backlog 이슈** 등장 시 즉시 사이클 발사(Linear에서 이슈만 만들면 곧 착수). | `true` | 선택(기본 `false`) |
