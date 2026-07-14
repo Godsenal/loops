@@ -278,7 +278,6 @@ async function control(a, p) {
       clearNextFire(lid);
       return { ok: true, out: 'schedule 저장' };
     }
-    case 'focus': { if (!p.workspace) return { ok: false }; const r = await sh(CMUX, ['select-workspace', '--workspace', p.workspace]); activateCmux(); return r; }
     case 'open-issue': {
       if (!lid || !p.issue) return { ok: false, out: 'no loop/issue' };
       const t = tabsAll().find(t => new RegExp('🛠\\s*' + lid + '\\s+' + p.issue, 'i').test(t.title));
