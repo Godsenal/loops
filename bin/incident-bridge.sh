@@ -9,6 +9,9 @@
 #   • supervisor escalate/rollback — supervisor-events.jsonl의 crash-loop escalate·self-update 롤백.
 # 발제하지 않는 신호 (의도적 제외): stuck(escalated)·rework-exhausted — 이슈별 **대상 레포** 문제라 엔진 루프의
 #   worker(엔진 레포에서만 작업)가 고칠 수 없는 영역이고, 이미 대시보드·Telegram으로 사람에게 1급 표면화된다.
+#   auth/quota abort(주간 한도 소진·로그아웃 등, ACCOUNT_ABORT_RE) — claude가 못 도는 **계정 상태**라 엔진에 고칠
+#   코드가 없다(같은 부류). run.log tail이 이 시그니처면 cycle-error 발제만 건너뛴다(스트릭·커서는 불변 →
+#   시그니처가 사라진 뒤의 진짜 연속 실패는 정상 발제).
 #
 # 폭주 방지: ① 시그니처 dedup — cycle-error는 "성공 run으로 스트릭이 리셋되기 전까지 1회"(filed 플래그),
 #   supervisor 이벤트는 시그니처당 쿨다운(기본 86400s). ② 전역 일일 캡 LOOPS_INCIDENT_DAILY_MAX(3) — 초과분은
@@ -23,6 +26,11 @@ mkdir -p "$GSTATE"
 FAILS=${LOOPS_INCIDENT_FAILS:-2}
 DAILY_MAX=${LOOPS_INCIDENT_DAILY_MAX:-3}
 SUP_COOLDOWN=${LOOPS_INCIDENT_COOLDOWN:-86400}
+# claude가 계정 상태로 **즉시 abort할 때만** 내는 문구(대소문자 그대로). 넓히면 진짜 크래시를 억제한다 —
+# 특히 부분문자열 주의: 'rate limit'은 정상 동작 중 출력되는 "...switch you back to your subscription
+# rate limits when they reset"(overage 청구 중)에 걸려 이 채널을 영구 무력화하므로 넣지 않는다(claude는
+# rate limit을 abort가 아니라 재시도로 처리). 아래는 전부 claude 바이너리·run.log 실측으로 확인된 문구.
+ACCOUNT_ABORT_RE='hit your weekly limit|usage limit reached|Not logged in|Please run /login|Invalid API key|Credit balance is too low'
 now=$(date +%s); today="$(date '+%F')"
 
 [[ -n "${LINEAR_API_KEY:-}" ]] || exit 0   # 발제 채널 미개통 — 스킵(주석의 미설정 정책)
@@ -86,6 +94,14 @@ for CFG in $ROOT/loops/*/config.json(N); do
   [[ -z "$res" ]] && continue
   streak="${res%%$'\t'*}"; filed="${res##*$'\t'}"
   if (( streak >= FAILS )) && [[ "$filed" != "true" ]]; then
+    # run.log tail을 한 번만 읽어 계정-abort 대조본과 아래 incident 본문 인용본이 반드시 같은 스냅샷이 되게 한다
+    # (run.log는 백그라운드 orchestrator가 동시 append하므로 두 번 읽으면 대조본≠증거본이 될 수 있다).
+    logtail="$(tail -60 "$lstate/run.log" 2>/dev/null)"
+    # 계정-abort 억제(주석의 auth/quota 미발제 정책) — filed를 안 세우므로 이 발제만 건너뛴다.
+    if print -r -- "$logtail" | grep -aqE "$ACCOUNT_ABORT_RE"; then
+      echo "[$(date '+%F %T')] 💤 incident 억제(계정 상태 auth/quota, 엔진 결함 아님): $lid 연속 ${streak}회 실패 (exit $ec)"
+      continue
+    fi
     bodyf="$(mktemp)"
     {
       print -r -- "자동 발제(incident-bridge) — 엔진 런타임 장애 신고."
@@ -98,7 +114,7 @@ for CFG in $ROOT/loops/*/config.json(N); do
       print -r -- ""
       print -r -- "### run.log tail"
       print -r -- '```'
-      tail -60 "$lstate/run.log" 2>/dev/null
+      print -r -- "$logtail"
       print -r -- '```'
     } > "$bodyf"
     if file_incident "cycle|$lid" "[incident] $lid 오케스트레이터 사이클 연속 ${streak}회 실패 (exit $ec)" "$bodyf"; then
