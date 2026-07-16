@@ -242,7 +242,7 @@ function render(d){
   +'<button class="gtx" onclick="ctl(\''+(_pz?'resume':'pause')+'\')" title="'+(_pz?'재개':'일시정지')+'" aria-label="'+(_pz?'재개':'일시정지')+'">'+(_pz?'▶▶':'⏸')+'</button>'
   +'<button class="d gtx" onclick="ctl(\'stop\')" title="정지" aria-label="정지">⏹</button>'
   +'<ot-dropdown><button class="gtx" title="로그·설정·안잠" aria-label="로그·설정·안잠" popovertarget="gmenu">⋯</button>'
-  +'<menu popover id="gmenu">'
+  +'<menu popover id="gmenu" role="menu" aria-label="디스패처 메뉴">'
   +'<button role="menuitem" class="ghost" popovertarget="gmenu" popovertargetaction="hide" onclick="viewDispatcherLog()">📋 dispatcher 로그</button>'
   +'<button role="menuitem" class="ghost" popovertarget="gmenu" popovertargetaction="hide" onclick="viewBotLog()">🤖 봇 로그'+(d.telegram?(d.telegram.running?' ●':(d.telegram.configured?' ○':'')):'')+'</button>'
   +'<button role="menuitem" class="ghost" popovertarget="gmenu" popovertargetaction="hide" onclick="openWS()">⚙️ 워크스페이스 설정</button>'
