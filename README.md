@@ -78,7 +78,7 @@ loopctl start                           # 디스패처
 | `repo` | 작업 대상 repo의 **절대경로**. git repo여야 함. | `"/Users/me/proj"` | 필수 |
 | `baseRef` | worktree·PR diff의 기준 ref. | `"origin/develop"` | 선택(기본 `origin/develop`) |
 | `prBase` | PR을 머지할 대상 브랜치. | `"develop"` | 선택(기본 `develop`) |
-| `claudeCmd` | orchestrator·worker가 쓰는 claude 실행 커맨드. 비우면 기본 `claude`. headless 인자는 엔진이 항상 덧붙임. 대시보드 ⚙️ 설정에서도 편집 가능. | `"claude"` | 선택(기본 `claude`) |
+| `claudeCmd` | orchestrator·worker가 쓰는 claude 실행 커맨드. 비우면 기본 `claude`. headless 인자는 엔진이 항상 덧붙임. 래퍼 커맨드도 가능(예: `claude-acct cloop` — 멀티계정 라운드로빈+리밋 핸드오프, dotfiles 제공) — 단 stdout을 오염시키지 말 것(headless 호출자는 `--output-format json`의 JSON 정확히 1개를 기대). 대시보드 ⚙️ 설정에서도 편집 가능. | `"claude"` / `"claude-acct cloop"` | 선택(기본 `claude`) |
 | `delivery` | worker 배포 방식. `"pr"`=PR만 열고 머지는 사람(기본). `"direct"`=PR 없이 `prBase`에 직접 push 후 이슈를 바로 Done(개인/리뷰어 없는 repo용). **두 모드 모두 force-push 금지.** | `"pr"` / `"direct"` | 선택(기본 `"pr"`) |
 | `branchPrefix` | worker 브랜치 이름 접두사. | `"loop-deadcode"` | 선택(기본 `loop-<id>`) |
 | `orchestratorWorktree` | orchestrator가 도는 worktree 절대경로. | `"/Users/me/wt/loop-deadcode"` | 필수 |
