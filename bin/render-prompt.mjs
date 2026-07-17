@@ -20,6 +20,7 @@ const vars = {
   MAX_WORKERS: String(cfg.maxWorkers || 2),
   BACKLOG_TARGET: String(cfg.backlogTarget || 5),
   STATE_DIR: `${ROOT}/loops/${loopId}/state`,
+  LOOPS_BIN: `${ROOT}/bin`,   // 결정론 Linear 헬퍼(linear-states/move/create/gql) 경로 — MCP 미인증 폴백 안내용
   ORCH_WORKTREE: cfg.orchestratorWorktree || '',
   BRANCH_PREFIX: cfg.branchPrefix || `loop-${loopId}`,
   SPAWN_WORKER: `${ROOT}/bin/spawn-worker.sh ${loopId}`,

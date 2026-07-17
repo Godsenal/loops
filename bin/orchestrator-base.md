@@ -21,7 +21,7 @@
 STEP 0 — 준비
 ═══════════════════════════════════════════════════
 1. git 위생: `git fetch origin -q && git checkout --detach {{BASE_REF}}` (더러우면 `git reset --hard {{BASE_REF}} && git clean -fd`).
-2. Linear `get_project`(projectId `{{LINEAR_PROJECT_ID}}`) 연결 확인. 실패 시 폴백: `{{STATE_DIR}}/ledger.json` 사용하고 요약 맨 앞에 "⚠️ LINEAR UNAVAILABLE" 명시.
+2. Linear 연결 확인 — MCP(`linear-server`)가 있으면 `get_project`(projectId `{{LINEAR_PROJECT_ID}}`)로. **MCP가 미인증/부재여도(headless 세션에서 흔함) Linear는 포기하지 않는다 — 1차 폴백: 결정론 GraphQL 경로.** `loops.env`의 `LINEAR_API_KEY`로 전체 읽기/쓰기가 된다: 조회는 `LINEAR_API_KEY=… node {{LOOPS_BIN}}/linear-states.mjs {{LINEAR_PROJECT_ID}} [라벨]`, 상태 이동은 `linear-move.mjs <ID> <stateType>`, 이슈 생성은 `linear-create.mjs <projectId> <제목>` (본문 stdin), 그 외 임의 쿼리/뮤테이션(라벨 부여·코멘트·본문 등)은 `linear-gql.mjs`를 import하는 짧은 `node --input-type=module` 스크립트로. 이 경로면 **run은 정상이다**(degraded 아님) — 요약에 "MCP 대신 GraphQL 경로 사용" 한 줄만 남긴다. GraphQL 경로까지 실패(키 없음/네트워크)했을 때만 읽기 전용 폴백으로 `{{STATE_DIR}}/snapshot.json` 미러를 쓰고 요약 맨 앞에 "⚠️ LINEAR UNAVAILABLE" 명시(상태 변경·발행은 하지 않는다).
 3. **너(LLM)는 worktree·cmux 탭을 절대 건드리지 않는다.** 진행 중 worktree는 `claude --resume` 보존용이다. (종료 상태 Done/Canceled 이슈의 잔여 worktree·탭·브랜치는 run 종료 후 `run-once.sh`가 결정론적 쉘로 자동 정리한다 — 네 일이 아니다.)
 
 ═══════════════════════════════════════════════════
