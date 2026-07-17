@@ -85,6 +85,7 @@ loopctl start                           # 디스패처
 | `worktreePrefix` | worker worktree 경로 접두사(이슈별 `-<slug>` 가 붙음). | `"/Users/me/wt/loop-deadcode"` | 필수 |
 | `linearProjectId` | 작업 ledger로 쓰는 Linear 프로젝트 ID. | `"5d88…"` | 필수 |
 | `linearProjectUrl` | 대시보드에서 여는 Linear 프로젝트 URL. | `"https://linear.app/…"` | 선택 |
+| `linearLabel` | **하나의 Linear 프로젝트를 라벨로 나눠 여러 루프가 공유**할 때, 이 루프가 담당할 라벨. 지정 시 조회·발굴·fan-out·정리가 전부 이 라벨 이슈로 스코프되고, orchestrator가 새로 만드는 이슈에도 이 라벨을 붙인다. 비우면 프로젝트 전체 담당(기존 단독-프로젝트 동작). 예: 같은 프로젝트에서 `"Feature"`=PM 루프, `"Bug"`=버그 루프. | `"Bug"` | 선택(기본 없음=전체) |
 | `maxWorkers` | 동시에 도는 worker 수 상한(capacity cap). | `2` | 선택(기본 `2`) |
 | `backlogTarget` | 백로그 이슈 수가 **이 값 미만일 때만** orchestrator가 백로그를 보충. | `5` | 선택(기본 `5`) |
 | `schedule.intervalSec` | orchestrator 발사 주기(초). 최소 60. | `10800` (3시간) | 선택(기본 `3600`) |
@@ -95,8 +96,31 @@ loopctl start                           # 디스패처
 | `budget.dailyUsd` | 일일 비용 소프트 캡(USD). 오늘 `costs.jsonl` 합계가 캡 이상이면 dispatcher가 **다음 사이클만 skip**(진행 중 worker는 안 죽임), 자정 리셋 후 자동 재개. 측정 범위=headless 사이클(오케스트레이터·retro·검증자·validator). | `5` | 선택(기본 없음=무제한) |
 | `on.ciFailure` | `true`면 `prBase` 브랜치에 **새 CI 실패** 등장 시 interval을 기다리지 않고 즉시 사이클 발사. | `true` | 선택(기본 `false`) |
 | `on.prReview` | `true`면 이 루프의 열린 PR에 **새 사람 리뷰** 제출 시 즉시 사이클 발사(리뷰 반영 지연 단축). | `true` | 선택(기본 `false`) |
-| `on.linearNew` | `true`면 Linear 프로젝트에 **새 Backlog 이슈** 등장 시 즉시 사이클 발사(Linear에서 이슈만 만들면 곧 착수). | `true` | 선택(기본 `false`) |
+| `on.linearNew` | `true`면 Linear 프로젝트에 **새 Backlog 이슈** 등장 시 즉시 사이클 발사(Linear에서 이슈만 만들면 곧 착수). `linearLabel` 있으면 그 라벨의 신규 이슈만. | `true` | 선택(기본 `false`) |
+| `drain` | **"쌓이면 계속 처리, 비면 조용" 모드.** 지정 시 스케줄 발사가 값싼 Linear 체크로 게이트된다 — **드레인 가능** backlog(라벨 스코프 · run-log/human-gate 이슈 제외)>0 & in-flight<cap **또는** 발굴 주기(`drain.discoverySec`, 기본 600초) 도래일 때만 LLM 사이클을 태우고, 아니면 스킵(idle 토큰비용 0). `intervalSec`을 짧게(예 120) + `on.linearNew:true`와 함께 쓰면 새 이슈는 즉시 착수하고 빈 슬롯은 곧 재충전되며, 할 일 없을 땐 발굴 주기로만 폴링. 발굴을 MCP로 하는 버그 루프처럼 "빠르게 반응하되 idle 비용은 없게"에 적합. | `true` / `{ "discoverySec": 600 }` | 선택(기본 없음=매 interval 발사) |
 | `retro.everyCycles` | 정규 사이클 N개마다 **retro 분석 run**(LOOP_MODE=retro)을 자동 발사해 `state/learnings.md`(교훈)를 갱신 — 머지/거절/리뷰/human-gate 판례에서 패턴을 추출해 다음 run 프롬프트에 주입. 0/미설정=비활성. | `20` | 선택(기본 없음=비활성) |
+| `product` | 이 루프가 속한 **제품**(`products/<id>/product.json`) 링크. 지정 시 `repo`·`baseRef`·`prBase`·`claudeCmd`·`linearProjectId`·`linearProjectUrl`을 제품에서 상속(루프 값이 항상 우선, 이 화이트리스트만). 아래 [제품 계층](#제품product-계층) 참고. | `"myapp"` | 선택 |
+
+### 제품(product) 계층
+**제품 1개 = Linear 프로젝트 1개 = 루프 여러 개**(예: PM 루프 + 버그 루프)로 관리할 때 쓰는 상위 단위. `products/<id>/product.json`(gitignored)에 제품 공통 설정을 두고, 각 루프는 `"product": "<id>"`로 연결해 공통 필드를 상속받는다(루프별 설정 — 스케줄·cap·라벨·worktree — 은 루프 config에 남는다).
+
+```jsonc
+// products/myapp/product.json
+{
+  "id": "myapp", "name": "Petstagram (솜이랑)",
+  "linearProjectId": "…", "linearProjectUrl": "…",           // 공유 ledger (= 이 제품)
+  "repo": "/Users/me/myapp", "baseRef": "origin/main", "prBase": "main",
+  "claudeCmd": "claude-acct c2",                              // MCP 붙은 계정 (루프가 오버라이드 가능)
+  "triage": {                                                 // 상위 분류기 (선택)
+    "routes": { "Bug": "결함 — 코드 수정으로 고침", "Feature": "새 기능·개선 — PM 검토 대상" },
+    "model": "haiku", "maxPerPass": 5
+  }
+}
+```
+
+- **파티션**: 각 루프가 `linearLabel`로 프로젝트를 나눈다 — 예: `"Feature"`=PM 루프, `"Bug"`=버그 루프(drain).
+- **triage(상위 분류기)**: 사람이 **라벨 없이 그냥 쌓은** 이슈를 dispatcher가 ≤60s 내 감지, 값싼 headless 분류(LLM은 라벨 *선택*만 — Linear 부착·코멘트는 결정론 스크립트 `bin/linear-label.mjs`, routes에 없는 라벨은 거부)로 라벨을 붙인다. 붙는 순간 그 라벨 루프의 `on.linearNew`가 잡아 **즉시 사이클** — "이슈만 쌓으면 알아서 분류돼 처리"가 이 경로다. 이슈당 3회 실패 시 "라벨 직접 지정" 코멘트를 남기고 포기(무한 재시도 없음). dedup은 Linear 자신(라벨 부재=미분류)이라 사이드 스테이트 최소(`products/<id>/state/triage.json`은 attempts만).
+- 기존 이슈가 있는 프로젝트를 나눌 땐 **먼저 이슈에 라벨을 붙이고**(1회 마이그레이션) 라벨 필터를 켠다.
 
 ## 구조
 ```

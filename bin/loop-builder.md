@@ -18,6 +18,12 @@
   · dedup에 **"Canceled(기각)된 제안과 같은 계열 재발굴 금지"** 를 명시 — 기각도 데이터다.
   · config 차이: `backlogTarget` 3~5(승인 대기 제안 백프레셔 — 쌓이면 발굴 자동 중단), `intervalSec` 길게(≥43200), `"retro": { "everyCycles": 6 }` 포함(기각 vs 승인 패턴을 learnings로 학습), `"validate": true` 포함(fresh-context 검증자가 제안 근거를 심문해 판정을 게이트에 병기).
   · **기존 B 아키타입 mission이 있으면 반드시 읽고 구조를 따라라**: `grep -l "human-gate 제안서" $LOOPS_HOME/loops/*/mission.md` (예: pm-loop).
+- **C. 버그/드레인 루프**: 요청이 "관측(Sentry/PostHog 등) 에러를 가져와 고친다" 또는 "쌓이는 이슈를 빠르게 계속 처리한다"류면 이쪽. A와 같은 자동수정이되 입력이 **관측 신호 + 사람이 넣은 버그**이고 발사가 **drain 모드**다.
+  · 발굴 입력 = **연결된 error-tracking MCP를 읽기 전용**으로 조회(claudeCmd 계정에 그 MCP를 user-scope로 붙여둬야 worktree cwd에서 보인다). dedup은 이슈 본문 `fingerprint:` 마커 + Linear 검색으로. severity 분기: 명확=자동수정, 애매=human-gate.
+  · config 차이: `"linearLabel": "Bug"`(공유 프로젝트를 라벨로 나눌 때 — PM 루프는 같은 프로젝트에 `"Feature"`), `"drain": { "discoverySec": 600 }` + `intervalSec` 짧게(120) + `"on": { "linearNew": true, "ciFailure": true, "prReview": true }` + `"verify": true` + `claudeCmd` 를 MCP 붙은 계정으로 핀(예 `claude-acct c2` — 라운드로빈 cloop은 MCP 없는 계정에 걸릴 수 있어 피함).
+  · **템플릿**: `$LOOPS_HOME/examples/bug-drain/{config.json,mission.md}` 를 복사해 값만 채워라.
+- **공유 Linear 프로젝트 (라벨 분리)**: 여러 루프가 **하나의 Linear 프로젝트**를 쓰고 싶으면 각 루프 config에 `linearLabel`을 준다(예: 같은 프로젝트에서 Feature=PM·Bug=버그). 엔진이 조회·발굴·fan-out·정리·이벤트를 전부 그 라벨로 스코프하고 새 이슈에 라벨을 붙인다. 기존 프로젝트를 나눌 땐 **기존 이슈에 라벨을 먼저 붙여야**(마이그레이션) 라벨 필터를 켜도 안 사라진다. `linearLabel` 미지정 = 프로젝트 전체 담당(기존 동작).
+- **제품(product) 계층**: 라벨 분리로 루프 2개+를 묶을 땐 `products/<id>/product.json`을 만들어 제품 공통 설정(repo·baseRef·prBase·claudeCmd·linearProjectId/Url)을 올리고 각 루프 config에 `"product": "<id>"`만 남긴다(상속 — 루프 값 우선). product.json `triage.routes`를 정의하면 **상위 분류기**가 라벨 없이 쌓인 이슈를 ≤60s 내 분류·라우팅한다("이슈만 쌓으면 알아서 처리"). 스키마·예시는 README [제품 계층] 참고.
 
 ═══ 만들 것 (순서대로 실제 실행) ═══
 1. **환경 확인**: 먼저 `printenv LOOPS_HOME WORKTREE_BASE DEFAULT_REPO` 로 경로를 확인한다. **repo 후보**: 요청에 절대경로가 명시되면 그것 / 아니면 `$DEFAULT_REPO`(보통 모노레포 — server/admin/client가 한 repo에) / 둘 다 없으면 `$WORKTREE_BASE` 밑 git repo들. mission에서 하위 경로(예: `client/apps/webview`)로 범위를 좁혀라.
@@ -47,8 +53,10 @@
      "branchPrefix": "loop-<id>",
      "orchestratorWorktree": "<$WORKTREE_BASE>/loop-<id>", "worktreePrefix": "<$WORKTREE_BASE>/loop-<id>",
      "linearProjectId": "<생성한 projectId>", "linearProjectUrl": "<url>",
-     "maxWorkers": <인터뷰 강도 preset 반영, 기본 2>, "backlogTarget": <A: 8 / B: 4>, "schedule": { "startAt": null, "intervalSec": <A: 10800 / B: 43200> }, "enabled": false
+     "maxWorkers": <인터뷰 강도 preset 반영, 기본 2>, "backlogTarget": <A: 8 / B: 4 / C: 3>, "schedule": { "startAt": null, "intervalSec": <A: 10800 / B: 43200 / C: 120> }, "enabled": false
      // B 아키타입이면 "retro": { "everyCycles": 6 } 필드도 추가
+     // C(버그/드레인)면: "linearLabel": "Bug"(공유 프로젝트 시), "drain": { "discoverySec": 600 }, "verify": true, "on": { "linearNew": true, "ciFailure": true, "prReview": true }, claudeCmd를 MCP 붙은 계정으로 핀
+     // 공유 프로젝트를 라벨로 나눌 때만 "linearLabel" — 단독 프로젝트면 생략(전체 담당)
    }
    ```
 7. 끝에 한국어로 보고: "✅ 생성: <id> — <name>. Linear <url>. 대시보드에서 mission 검토 후 '켜기' 하세요." (+"다 맡김"/headless로 진행했으면 어떤 가정을 했는지 명시)
