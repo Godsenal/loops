@@ -169,7 +169,7 @@ function loopStatus(lid, allTabs) {
   const nextTs = (gd.running && !existsSync(`${st}/PAUSED`) && cfg.enabled !== false && nextFile) ? +nextFile : null;
   return {
     id: lid, name: cfg.name || lid, emoji: cfg.emoji || '🔁', enabled: cfg.enabled !== false,
-    product: cfg.product || null,   // 제품 계층 — 사이드바가 product 단위로 그룹핑
+    product: cfg.product || null, linearLabel: cfg.linearLabel || null,   // 제품 계층 — 사이드바 그룹핑 + 제품 모달 멤버 표시
     repo: cfg.repo || '', linearProjectUrl: cfg.linearProjectUrl || '', maxWorkers: cfg.maxWorkers || 2,
     delivery: cfg.delivery || 'pr',
     schedule: cfg.schedule || { intervalSec: 3600, startAt: null }, paused: existsSync(`${st}/PAUSED`),
@@ -491,6 +491,46 @@ async function control(a, p) {
       writeFileSync(pf, JSON.stringify(cur, null, 2) + '\n');
       return { ok: true, out: '📦 제품 설정 저장 — 즉시 적용' };
     }
+    case 'attach-loop': {   // 기존 루프를 제품에 편입: 이슈 이관/라벨링(Linear) → config 연결 + 중복 필드 호이스트. 표준 모델(제품=프로젝트 1개, 라벨 분리)로의 전환기.
+      const alid = String(p.loop || '').trim(); if (!alid) return { ok: false, out: 'no loop' };
+      const cfg = readJSON(cfgPath(alid)); if (!cfg) return { ok: false, out: 'no config' };
+      const prodId = String(p.product || '').trim();
+      const prod = readJSON(`${ROOT}/products/${prodId}/product.json`); if (!prod) return { ok: false, out: '제품 없음: ' + prodId };
+      const label = String(p.linearLabel || '').trim(); if (!label) return { ok: false, out: '담당 라벨 필요' };
+      if (!prod.linearProjectId) return { ok: false, out: '제품에 Linear 프로젝트가 없음 — 제품 ⚙️에서 먼저 설정하세요' };
+      const routeLabels = prod.triage && prod.triage.routes ? Object.keys(prod.triage.routes) : [];
+      let moved = 0, labeled = 0;
+      try {
+        await ensureRouteLabels(prod.linearProjectId, [label]);
+        const tq = await linearGQL(`query($pid:String!){ project(id:$pid){ teams(first:1){ nodes{ labels(first:250){ nodes{ id name } } } } } }`, { pid: prod.linearProjectId });
+        const lbl = tq?.project?.teams?.nodes?.[0]?.labels?.nodes?.find(l => l.name === label);
+        if (!lbl) return { ok: false, out: `라벨 '${label}' id 확보 실패` };
+        if (cfg.linearProjectId && cfg.linearProjectId !== prod.linearProjectId) {
+          // 루프 전용 프로젝트 → 제품 공유 프로젝트로 **전 이슈 이관 + 라벨 부착**. identifier(팀 단위)는 불변이라 worktree/브랜치/탭 매칭이 안 깨진다.
+          const iq = await linearGQL(`query($id:String!){ project(id:$id){ issues(first:250){ nodes{ id labels{ nodes{ id } } } } } }`, { id: cfg.linearProjectId });
+          for (const n of (iq?.project?.issues?.nodes || [])) {
+            const ids = Array.from(new Set([...n.labels.nodes.map(l => l.id), lbl.id]));
+            await linearGQL(`mutation($id:String!,$in:IssueUpdateInput!){ issueUpdate(id:$id,input:$in){ success } }`, { id: n.id, in: { projectId: prod.linearProjectId, labelIds: ids } });
+            moved++;
+          }
+        } else {
+          // 이미 공유 프로젝트(또는 미지정) → **라우트 라벨이 하나도 없는 이슈만** 이 루프 몫으로 라벨링 — 다른 루프 라벨은 불가침.
+          const iq = await linearGQL(`query($id:String!){ project(id:$id){ issues(first:250){ nodes{ id labels{ nodes{ id name } } } } } }`, { id: prod.linearProjectId });
+          const rset = new Set(routeLabels.length ? routeLabels : [label]);
+          for (const n of (iq?.project?.issues?.nodes || [])) {
+            if (n.labels.nodes.some(l => rset.has(l.name))) continue;
+            await linearGQL(`mutation($id:String!,$in:IssueUpdateInput!){ issueUpdate(id:$id,input:$in){ success } }`, { id: n.id, in: { labelIds: [...n.labels.nodes.map(l => l.id), lbl.id] } });
+            labeled++;
+          }
+        }
+      } catch (e) { return { ok: false, out: '이슈 이관 실패 — config는 안 바꿨습니다(재시도 안전): ' + e.message }; }
+      cfg.product = prodId; cfg.linearLabel = label;
+      for (const k of ['repo', 'baseRef', 'prBase', 'claudeCmd']) if (cfg[k] != null && prod[k] != null && cfg[k] === prod[k]) delete cfg[k];   // 제품과 같은 값만 호이스트(다르면 오버라이드로 존중)
+      delete cfg.linearProjectId; delete cfg.linearProjectUrl;   // 제품 상속
+      cfg.on = Object.assign({}, cfg.on, { linearNew: true });   // 라벨 라우팅 표준 — 새 라벨 이슈 즉시 착수
+      writeFileSync(cfgPath(alid), JSON.stringify(cfg, null, 2));
+      return { ok: true, out: `🔗 ${alid} → 📦 ${prodId} 편입 완료 (라벨 ${label}${moved ? ` · 이슈 ${moved}건 이관` : ''}${labeled ? ` · 기존 이슈 ${labeled}건 라벨링` : ''} · 새 이슈 즉시착수 on)` };
+    }
     case 'save-config-raw': {
       if (!lid) return { ok: false }; let obj = p.config;
       if (typeof obj === 'string') { try { obj = JSON.parse(obj); } catch (e) { return { ok: false, out: 'JSON 파싱 실패: ' + e.message }; } }
@@ -506,7 +546,14 @@ async function control(a, p) {
       execFile('/bin/rm', ['-rf', dir], () => {}); return { ok: true, out: id + ' loop 삭제됨 (worktree·탭 정리 · Linear는 보존)' };
     }
     case 'build-loop': {
-      const desc = p.description; if (!desc) return { ok: false, out: '설명 필요' };
+      let desc = p.description; if (!desc) return { ok: false, out: '설명 필요' };
+      // 제품 하위 루프 요청이면 빌더(loop-builder.md)에게 제품 컨텍스트를 구조화해 전달 — 프로젝트 새로 안 만들고 상속/라벨 모델을 따르게.
+      if (p.product) {
+        const prod = readJSON(`${ROOT}/products/${p.product}/product.json`);
+        if (!prod) return { ok: false, out: '제품 없음: ' + p.product };
+        const routes = prod.triage && prod.triage.routes ? Object.keys(prod.triage.routes).join(', ') : '(없음)';
+        desc += `\n\n[제품 컨텍스트 — 지시] 이 루프는 제품 '${p.product}'(products/${p.product}/product.json, repo ${prod.repo || '?'}) 하위 루프다. config에 "product":"${p.product}"를 넣고 repo·baseRef·prBase·claudeCmd·linearProjectId/Url은 넣지 마라(제품 상속). **Linear 프로젝트를 새로 만들지 마라** — 제품 공유 프로젝트를 쓴다. "linearLabel"을 정해 넣어라(기존 라우트: ${routes}${p.linearLabel ? ` · 사용자가 지정한 라벨: ${p.linearLabel}` : ''} — 새 라벨이면 제품 product.json의 triage.routes에도 설명과 함께 추가). "on":{"linearNew":true} 포함.`;
+      }
       const b64 = Buffer.from(String(desc), 'utf8').toString('base64');
       const r = await sh(CMUX, ['new-workspace', '--cwd', ROOT, '--command', `${ROOT}/bin/build-loop.sh ${b64}`]);
       const m = (r.out || '').match(/workspace:\d+/); if (m) { await sh(CMUX, ['rename-workspace', '--workspace', m[0], '🤖 loop builder']); reorderBottom(m[0]); await sh(CMUX, ['select-workspace', '--workspace', m[0]]); }   // 새 탭을 실제로 선택해야 activate 시 빌더가 보인다 (없으면 직전 선택 탭이 뜬다)
@@ -524,6 +571,13 @@ async function control(a, p) {
         linearProjectId: p.linearProjectId || '', linearProjectUrl: p.linearProjectUrl || '',
         maxWorkers: +p.maxWorkers || 2, schedule: { startAt: p.startAt || null, intervalSec: Math.max(60, Math.round((+p.intervalMin || 120) * 60)) }, enabled: false,
       };
+      if (p.product && readJSON(`${ROOT}/products/${p.product}/product.json`)) {
+        // 제품 하위 루프: 공통 필드는 상속 — 빈 문자열로 남기면 상속(cfgval의 v==null 판정)이 막히므로 키 자체를 지운다.
+        cfg.product = String(p.product);
+        if (String(p.linearLabel || '').trim()) cfg.linearLabel = String(p.linearLabel).trim();
+        for (const k of ['repo', 'baseRef', 'prBase', 'linearProjectId', 'linearProjectUrl']) if (!String(p[k] || '').trim()) delete cfg[k];
+        cfg.on = { linearNew: true };
+      }
       writeFileSync(cfgPath(id), JSON.stringify(cfg, null, 2));
       writeFileSync(`${LOOPS}/${id}/mission.md`, p.mission || '(이 루프의 임무를 정의하세요)');
       return { ok: true, out: 'loop 생성: ' + id + ' (enabled=false, 켜려면 toggle)' };

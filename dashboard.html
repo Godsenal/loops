@@ -149,6 +149,7 @@ h1{letter-spacing:-.4px;font-weight:700}
  <div class="sec">🤖 AI로 만들기 (추천)</div>
  <textarea id="c_desc" aria-label="AI 루프 생성 프롬프트" placeholder="예: 웹뷰 리팩토링 루프 만들어줘 — webview의 거대 컴포넌트 분리하고 중복 로직 정리"></textarea>
  <div class="row" style="margin:8px 0 16px"><button class="p" onclick="buildLoop()">🤖 Claude로 생성</button> <span class="muted">탭에서 몇 가지 선택지(아키타입·repo·강도)에 답하면 mission·Linear·설정 구성 — "다 맡김"도 가능</span></div>
+ <div class="fld" style="margin-bottom:12px"><label for="c_prod">제품</label><select id="c_prod" style="width:auto"></select> <input id="c_label" placeholder="담당 라벨 (예: Bug)" style="width:150px"> <span class="muted" style="font-size:11px">제품 하위 루프면 선택 — repo·Linear·계정은 제품에서 상속되고, 그 라벨 이슈만 담당</span></div>
  <div class="sec">또는 직접 입력</div>
  <div class="fld"><label for="c_id">id</label><input id="c_id" placeholder="dead-code"></div>
  <div class="fld"><label for="c_name">이름</label><input id="c_name" placeholder="Dead Code 정리"></div>
@@ -194,6 +195,10 @@ h1{letter-spacing:-.4px;font-weight:700}
  <div class="fld"><label for="p_pid">프로젝트 ID</label><input id="p_pid" placeholder="Linear 프로젝트 UUID"></div>
  <div class="sec">🏷 자동 분류 <span class="muted" style="font-size:11px;font-weight:400">라벨 없이 쌓인 이슈를 AI가 아래 분류 중 하나로 라우팅 — 각 분류는 그 라벨을 담당하는 루프가 집어갑니다. 전부 지우면 분류 안 함.</span></div>
  <div id="p_routes"></div><button onclick="addRoute()">+ 분류 추가</button>
+ <div id="p_loopsec" style="display:none"><div class="sec">🧩 루프 <span class="muted" style="font-size:11px;font-weight:400">이 제품에 속한 루프들 — 각자 담당 라벨의 이슈만 처리</span></div>
+ <div id="p_loops" class="muted" style="font-size:13px;line-height:1.9;margin-bottom:8px"></div>
+ <div class="row" style="gap:6px;flex-wrap:wrap"><select id="p_att_loop" aria-label="편입할 루프" style="width:auto"></select><input id="p_att_label" placeholder="담당 라벨 (예: Bug)" style="width:150px"><button onclick="attachLoop()">🔗 편입</button><span style="flex:1"></span><button class="p" onclick="newLoopInProduct()">+ 이 제품에 새 루프</button></div>
+ <div class="muted" style="font-size:11px;margin-top:4px">편입: 그 루프의 이슈를 이 제품 프로젝트로 옮기고(전용 프로젝트였다면) 담당 라벨을 붙인 뒤, 공통 설정을 제품 상속으로 전환합니다.</div></div>
  <div id="p_scafrow" style="margin-top:12px"><label class="row" style="gap:6px"><input type="checkbox" id="p_scaffold" checked> 🐞 버그 자동수정 루프도 같이 만들기 <span class="muted" style="font-size:11px">(꺼진 상태로 생성 — mission 검토 후 켜세요)</span></label></div>
  <div class="row" style="margin-top:14px"><button class="p" id="p_submit" onclick="submitProduct()">생성</button> <span class="muted" id="p_hint" style="font-size:12px"></span></div>
 </div></dialog>
@@ -225,7 +230,10 @@ function viewBotLog(){sRef=null;sLoop=null;sDispatcher=false;sBot=true;document.
 function showS(){document.getElementById('smodal').showModal();refS();if(sTimer)clearInterval(sTimer);sTimer=setInterval(refS,2500);}
 function closeS(){document.getElementById('smodal').close();sDispatcher=false;sBot=false;if(sTimer)clearInterval(sTimer);}
 function refS(){var q=sBot?'bot=1':(sDispatcher?'dispatcher=1':(sRef?('ref='+encodeURIComponent(sRef)):('loop='+encodeURIComponent(sLoop))));fetch('/api/session?'+q).then(function(r){return r.text();}).then(function(t){document.getElementById('sbody').textContent=t;});}
-function openCreate(){document.getElementById('cmodal').showModal();setTimeout(function(){var e=document.getElementById('c_desc');if(e)e.focus();},50);}
+function openCreate(preProd){
+ var s=document.getElementById('c_prod'),ps=(LASTD&&LASTD.products)||{};
+ s.innerHTML='<option value="">(없음 — 독립 루프)</option>'+Object.keys(ps).map(function(k){return '<option value="'+esc(k)+'"'+(k===preProd?' selected':'')+'>📦 '+esc(ps[k].name||k)+'</option>';}).join('');
+ document.getElementById('cmodal').showModal();setTimeout(function(){var e=document.getElementById('c_desc');if(e)e.focus();},50);}
 /* ── 제품(product) 모달: 생성/편집 겸용. 제품 = Linear 프로젝트 1개 + 공통 설정 + (선택) 자동 분류. ── */
 var pMode='edit',pId=null;
 function pv(id){var e=document.getElementById(id);return e?e.value.trim():'';}
@@ -237,7 +245,7 @@ function openProductNew(){
  document.getElementById('ptitle').textContent='📦 새 제품';document.getElementById('p_submit').textContent='제품 생성';
  ['p_name','p_id','p_repo','p_claude','p_pid'].forEach(function(i){document.getElementById(i).value='';});
  document.getElementById('p_prBase').value='main';
- document.getElementById('p_idrow').style.display='';document.getElementById('p_newlin').style.display='';document.getElementById('p_scafrow').style.display='';
+ document.getElementById('p_idrow').style.display='';document.getElementById('p_newlin').style.display='';document.getElementById('p_scafrow').style.display='';document.getElementById('p_loopsec').style.display='none';
  document.getElementById('p_linnew').checked=true;document.getElementById('p_plink').textContent='';
  document.getElementById('p_hint').textContent='생성 후: 제품 헤더 아래에 루프가 나타나면 검토하고 켜세요.';
  document.getElementById('p_routes').innerHTML='';
@@ -257,8 +265,22 @@ function openProduct(id){
  var a=document.getElementById('p_plink');if(P.linearProjectUrl){a.href=P.linearProjectUrl;a.textContent='열기 ↗';}else{a.textContent='';}
  document.getElementById('p_hint').textContent='저장 즉시 적용 (재시작 불필요)';
  document.getElementById('p_routes').innerHTML='';(P.routes||[]).forEach(addRoute);
+ // 🧩 루프 섹션: 멤버 목록 + 미소속 루프 편입 셀렉트
+ document.getElementById('p_loopsec').style.display='';
+ var loops=(LASTD&&LASTD.loops)||[];
+ document.getElementById('p_loops').innerHTML=loops.filter(function(L){return L.product===id;}).map(function(L){return '<div>'+L.emoji+' '+esc(L.name)+' <span style="font-size:11px">— 라벨 <b>'+esc(L.linearLabel||'(전체)')+'</b> · '+(L.enabled?'on':'off')+'</span></div>';}).join('')||'<div>(아직 루프 없음 — 아래에서 편입하거나 새로 만드세요)</div>';
+ var free=loops.filter(function(L){return !L.product;});
+ document.getElementById('p_att_loop').innerHTML=free.length?free.map(function(L){return '<option value="'+esc(L.id)+'">'+L.emoji+' '+esc(L.name)+'</option>';}).join(''):'<option value="">(편입할 독립 루프 없음)</option>';
  document.getElementById('pmodal').showModal();
 }
+function attachLoop(){
+ var l=pv('p_att_loop'),lb=pv('p_att_label');
+ if(!l){alert('편입할 루프가 없습니다');return;}
+ if(!lb){alert('담당 라벨을 입력하세요 (예: Bug)');return;}
+ if(!confirm('루프 "'+l+'"를 이 제품에 편입합니다.\n\n· 그 루프가 전용 Linear 프로젝트를 쓰고 있었다면 이슈 전부를 이 제품 프로젝트로 옮기고 라벨 "'+lb+'"를 붙입니다.\n· 공통 설정(repo·계정 등)은 제품 상속으로 전환됩니다.\n\n계속할까요?'))return;
+ ctl('attach-loop',{loop:l,product:pId,linearLabel:lb}).then(function(j){if(j&&j.ok){flash(j.out);setTimeout(function(){openProduct(pId);},800);}});
+}
+function newLoopInProduct(){var k=pId;closeP();openCreate(k);}
 function closeP(){document.getElementById('pmodal').close();}
 function submitProduct(){
  var routes=[].map.call(document.querySelectorAll('#p_routes .prow'),function(row){return {label:row.querySelector('.r_label').value,desc:row.querySelector('.r_desc').value};});
@@ -272,9 +294,9 @@ function submitProduct(){
   ctl('save-product',Object.assign(base,{product:pId,linearProjectId:pv('p_pid')})).then(function(j){if(j&&j.ok)flash('📦 저장됨 — 즉시 적용');});
  }
 }
-function buildLoop(){var d=document.getElementById('c_desc').value.trim();if(!d){alert('만들고 싶은 루프를 한 줄로 설명하세요');return;}fetch('/api/control',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({action:'build-loop',description:d})}).then(function(r){return r.json();}).then(function(j){alert(j.out||'');closeC();});}
+function buildLoop(){var d=document.getElementById('c_desc').value.trim();if(!d){alert('만들고 싶은 루프를 한 줄로 설명하세요');return;}fetch('/api/control',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({action:'build-loop',description:d,product:document.getElementById('c_prod').value,linearLabel:document.getElementById('c_label').value.trim()})}).then(function(r){return r.json();}).then(function(j){alert(j.out||'');closeC();});}
 function closeC(){document.getElementById('cmodal').close();}
-function createLoop(){var b={id:c_id.value,name:c_name.value,emoji:c_emoji.value,repo:c_repo.value,linearProjectId:c_pid.value,intervalMin:c_iv.value,mission:c_mission.value};fetch('/api/control',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify(Object.assign({action:'create-loop'},b))}).then(function(r){return r.json();}).then(function(j){alert(j.out||'');if(j.ok){closeC();var m=/loop 생성: (\S+)/.exec(j.out);selectLoop(m?m[1]:c_id.value);}});}
+function createLoop(){var b={id:c_id.value,name:c_name.value,emoji:c_emoji.value,repo:c_repo.value,linearProjectId:c_pid.value,intervalMin:c_iv.value,mission:c_mission.value,product:document.getElementById('c_prod').value,linearLabel:document.getElementById('c_label').value.trim()};fetch('/api/control',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify(Object.assign({action:'create-loop'},b))}).then(function(r){return r.json();}).then(function(j){alert(j.out||'');if(j.ok){closeC();var m=/loop 생성: (\S+)/.exec(j.out);selectLoop(m?m[1]:c_id.value);}});}
 function startIssue(id){if(!confirm(id+' 지금 작업 시작? (worker 탭 생성→구현→PR)'))return;ctl('start-issue',{issue:id});}
 function retryIssue(id){if(!confirm(id+' 를 다시 시도할까요?\n· 자가복구 카운터 리셋 (다시 자동복구 시도 대상이 됨)\n· worktree가 있으면 진행분 보존한 채 재기동, 없으면 새로 생성'))return;ctl('heal-issue',{issue:id});}
 function closeTab(ws){if(!confirm('이 worker 탭(cmux 패널/세션)을 닫을까요?'))return;ctl('close-tab',{workspace:ws});}
