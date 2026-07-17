@@ -19,12 +19,12 @@ ROOT="$LOOPS_HOME"; PDIR=$ROOT/products/$P; PJ=$PDIR/product.json; STATE=$PDIR/s
 [[ -f "$PJ" ]] || exit 0
 [[ -n "${LINEAR_API_KEY:-}" ]] || exit 0            # 분류 채널 미개통 — 스킵(미설정의 정상 경로)
 mkdir -p "$STATE"
-PID="$(cfgval "$PJ" linearProjectId)"; [[ -z "$PID" ]] && { echo "⚠️ triage $P: linearProjectId 없음 — skip"; exit 0; }
+ROUTE_NAMES="$(node -e 'const c=JSON.parse(require("fs").readFileSync(process.argv[1]));process.stdout.write(Object.keys((c.triage||{}).routes||{}).join(","))' "$PJ")"
+[[ -z "$ROUTE_NAMES" ]] && exit 0                    # triage 미설정 제품(그룹핑·상속만 쓰는 경우) — 무음 스킵이 정상 경로
+PID="$(cfgval "$PJ" linearProjectId)"; [[ -z "$PID" ]] && { echo "⚠️ triage $P: routes는 있는데 linearProjectId 없음 — skip"; exit 0; }
 CLAUDE_CMD="$(cfgval "$PJ" claudeCmd)"; [[ -z "$CLAUDE_CMD" ]] && CLAUDE_CMD=claude
 MODEL="$(cfgval "$PJ" triage.model)"; [[ -z "$MODEL" ]] && MODEL=haiku
 MAXPASS="$(cfgval "$PJ" triage.maxPerPass)"; [[ -z "$MAXPASS" ]] && MAXPASS=5
-ROUTE_NAMES="$(node -e 'const c=JSON.parse(require("fs").readFileSync(process.argv[1]));process.stdout.write(Object.keys((c.triage||{}).routes||{}).join(","))' "$PJ")"
-[[ -z "$ROUTE_NAMES" ]] && exit 0                    # triage 미설정 제품 — 정상 스킵
 
 # 겹침 방지: 분류 호출(LLM)이 60s 케이던스보다 길 수 있다 — 진행 중이면 이번 패스는 조용히 넘어간다.
 LOCK=/tmp/triage-$P.lockdir
