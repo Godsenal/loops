@@ -6,3 +6,4 @@
 /notify.json
 *.log
 .DS_Store
+.gstack/

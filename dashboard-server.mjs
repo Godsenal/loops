@@ -202,7 +202,10 @@ function productsStatus() {
     let ev = [];
     try { ev = readText(`${ROOT}/products/${pid}/state/runs.jsonl`).trim().split('\n').filter(Boolean).map(l => { try { return JSON.parse(l); } catch { return null; } }).filter(e => e && e.type === 'triage'); } catch {}
     out[pid] = {
-      name: pj.name || pid, linearProjectUrl: pj.linearProjectUrl || '',
+      name: pj.name || pid, linearProjectUrl: pj.linearProjectUrl || '', linearProjectId: pj.linearProjectId || '',
+      repo: pj.repo || '', prBase: pj.prBase || '', claudeCmd: pj.claudeCmd || '',   // 제품 ⚙️ 모달 프리필용
+      model: (pj.triage && pj.triage.model) || 'haiku',
+      routes: pj.triage && pj.triage.routes ? Object.entries(pj.triage.routes).map(([label, desc]) => ({ label, desc })) : [],
       triage: !!(pj.triage && pj.triage.routes),
       triageToday: ev.filter(e => e.ts >= t0).length,
       triageLast: ev.slice(-3).reverse().map(e => ({ issue: e.issue, label: e.label })),
@@ -230,6 +233,21 @@ function linearGQL(query, variables) {
     req.on('error', reject); req.on('timeout', () => req.destroy(new Error('linear timeout')));
     req.end(body);
   });
+}
+
+// 제품 라우트 라벨을 프로젝트의 팀에 확보(없으면 생성). 실패는 throw — 호출자가 ok:false로 변환.
+// 라벨은 라우팅의 실체라, 조용히 빠지면 "분류는 됐는데 아무 루프도 안 집어가는" 유령 상태가 된다.
+async function ensureRouteLabels(projectId, labels) {
+  if (!labels.length) return;
+  const q = await linearGQL(`query($pid:String!){ project(id:$pid){ teams(first:1){ nodes{ id labels(first:250){ nodes{ name } } } } } }`, { pid: projectId });
+  const team = q?.project?.teams?.nodes?.[0];
+  if (!team) throw new Error('프로젝트의 팀을 찾을 수 없음');
+  const have = new Set((team.labels?.nodes || []).map(l => l.name));
+  for (const name of labels) {
+    if (have.has(name)) continue;
+    const m = await linearGQL(`mutation($in:IssueLabelCreateInput!){ issueLabelCreate(input:$in){ success } }`, { in: { teamId: team.id, name } });
+    if (!m?.issueLabelCreate?.success) throw new Error(`라벨 '${name}' 생성 실패`);
+  }
 }
 
 async function control(a, p) {
@@ -398,10 +416,80 @@ async function control(a, p) {
     case 'save-config': {
       if (!lid) return { ok: false }; const cfg = readJSON(cfgPath(lid)) || {};
       for (const k of ['name', 'emoji', 'repo', 'linearProjectId', 'linearProjectUrl', 'orchestratorWorktree', 'worktreePrefix', 'branchPrefix', 'baseRef', 'prBase', 'claudeCmd']) if (p[k] !== undefined) cfg[k] = p[k];
+      // product·linearLabel: 빈 값이면 키 자체를 지운다 — cfg.product=""는 상속도 안 되면서 파일만 오염.
+      for (const k of ['product', 'linearLabel']) if (p[k] !== undefined) { const v = String(p[k]).trim(); if (v) cfg[k] = v; else delete cfg[k]; }
       if (p.delivery === 'pr' || p.delivery === 'direct') cfg.delivery = p.delivery;   // 배달 방식(enum) — 유효값만 기록(no silent fallback)
       if (p.maxWorkers != null) cfg.maxWorkers = Math.max(1, +p.maxWorkers);
       if (p.backlogTarget != null) cfg.backlogTarget = Math.max(1, +p.backlogTarget);
       writeFileSync(cfgPath(lid), JSON.stringify(cfg, null, 2)); return { ok: true, out: 'config 저장' };
+    }
+    case 'create-product': {   // 대시보드 "+ 새 제품": (선택) Linear 프로젝트 자동 생성 + 라우트 라벨 확보 + product.json (+선택: 버그 루프 스캐폴드)
+      const id = String(p.id || '').trim().toLowerCase().replace(/[^a-z0-9-]+/g, '-').replace(/^-+|-+$/g, '');
+      if (!id) return { ok: false, out: '제품 id가 필요합니다 (영문 소문자·하이픈)' };
+      if (existsSync(`${ROOT}/products/${id}/product.json`)) return { ok: false, out: `이미 있는 제품: ${id}` };
+      const name = String(p.name || '').trim() || id;
+      const routes = (Array.isArray(p.routes) ? p.routes : []).map(r => ({ label: String((r && r.label) || '').trim(), desc: String((r && r.desc) || '').trim() })).filter(r => r.label);
+      let projId = String(p.linearProjectId || '').trim(), projUrl = '';
+      try {
+        if (!projId) {   // 새 Linear 프로젝트 자동 생성 (결정론 — LLM 불필요)
+          if (!LINEAR_KEY) return { ok: false, out: 'Linear API 키가 없어 프로젝트 자동 생성 불가 — ⚙️ 워크스페이스 설정에서 키를 넣거나, 기존 프로젝트 ID를 입력하세요' };
+          let teamId = String(p.linearTeamId || '').trim();
+          if (!teamId) {
+            const t = await linearGQL(`query{ teams(first:20){ nodes{ id name } } }`);
+            const ns = t?.teams?.nodes || [];
+            if (ns.length !== 1) return { ok: false, out: '팀이 여러 개라 자동 선택 불가 — 팀을 선택해주세요' };
+            teamId = ns[0].id;
+          }
+          const m = await linearGQL(`mutation($in:ProjectCreateInput!){ projectCreate(input:$in){ success project{ id url } } }`, { in: { name, teamIds: [teamId] } });
+          if (!m?.projectCreate?.success) return { ok: false, out: 'Linear 프로젝트 생성 실패' };
+          projId = m.projectCreate.project.id; projUrl = m.projectCreate.project.url;
+        } else {
+          const q = await linearGQL(`query($pid:String!){ project(id:$pid){ url } }`, { pid: projId });
+          if (!q?.project) return { ok: false, out: '해당 ID의 Linear 프로젝트를 찾을 수 없습니다' };
+          projUrl = q.project.url;
+        }
+        if (routes.length) await ensureRouteLabels(projId, routes.map(r => r.label));
+      } catch (e) { return { ok: false, out: 'Linear 준비 실패: ' + e.message }; }
+      const prb = String(p.prBase || '').trim() || 'main';
+      const pj = { id, name, linearProjectId: projId, linearProjectUrl: projUrl, baseRef: 'origin/' + prb, prBase: prb };
+      if (String(p.repo || '').trim()) pj.repo = String(p.repo).trim();
+      if (String(p.claudeCmd || '').trim()) pj.claudeCmd = String(p.claudeCmd).trim();
+      if (routes.length) pj.triage = { routes: Object.fromEntries(routes.map(r => [r.label, r.desc])), model: String(p.model || '').trim() || 'haiku', maxPerPass: 5 };
+      mkdirSync(`${ROOT}/products/${id}/state`, { recursive: true });
+      writeFileSync(`${ROOT}/products/${id}/product.json`, JSON.stringify(pj, null, 2) + '\n');
+      let extra = '';
+      if (p.scaffoldBug && pj.repo) {   // 버그 자동수정 루프 스캐폴드 (examples/bug-drain 템플릿 · enabled:false — 사람 검토 후 켜기)
+        const blid = `${id}-bugs`;
+        if (!existsSync(`${LOOPS}/${blid}`)) {
+          const tc = readJSON(`${ROOT}/examples/bug-drain/config.json`) || {};
+          const bugLabel = (routes.find(r => /bug|버그/i.test(r.label)) || routes[0] || { label: 'Bug' }).label;
+          Object.assign(tc, { id: blid, name: `${name} — 버그 수정`, emoji: '🐞', product: id, linearLabel: bugLabel, branchPrefix: `loop-${blid}`, orchestratorWorktree: `${WORKTREE_BASE}/loop-${blid}`, worktreePrefix: `${WORKTREE_BASE}/loop-${blid}`, enabled: false });
+          for (const k of ['repo', 'baseRef', 'prBase', 'linearProjectId', 'linearProjectUrl', 'claudeCmd']) delete tc[k];   // 제품에서 상속
+          mkdirSync(`${LOOPS}/${blid}/state`, { recursive: true });
+          writeFileSync(cfgPath(blid), JSON.stringify(tc, null, 2) + '\n');
+          let ms = readText(`${ROOT}/examples/bug-drain/mission.md`).split('<앱 이름>').join(name);
+          if (bugLabel !== 'Bug') ms = ms.split('`Bug`').join('`' + bugLabel + '`');
+          writeFileSync(`${LOOPS}/${blid}/mission.md`, ms);
+          extra = ` · 🐞 버그 루프 '${blid}' 생성됨(꺼짐 — mission 검토 후 켜세요)`;
+        }
+      }
+      return { ok: true, out: `📦 제품 '${name}' 생성됨${projUrl ? ' · Linear 프로젝트 연결' : ''}${extra}` };
+    }
+    case 'save-product': {   // 제품 ⚙️ 모달 저장 — product.json 병합(모르는 키 보존) + 새 라우트 라벨 Linear 확보. 저장 즉시 적용(매 호출 재-read).
+      const pid2 = String(p.product || '').trim(); const pf = `${ROOT}/products/${pid2}/product.json`;
+      const cur = readJSON(pf); if (!cur) return { ok: false, out: '제품 없음: ' + pid2 };
+      for (const k of ['name', 'repo', 'claudeCmd', 'linearProjectId', 'linearProjectUrl']) if (p[k] !== undefined) { const v = String(p[k]).trim(); if (v) cur[k] = v; else delete cur[k]; }
+      if (p.prBase !== undefined) { const v = String(p.prBase).trim(); if (v) { cur.prBase = v; cur.baseRef = 'origin/' + v; } }
+      if (Array.isArray(p.routes)) {
+        const routes = p.routes.map(r => ({ label: String((r && r.label) || '').trim(), desc: String((r && r.desc) || '').trim() })).filter(r => r.label);
+        if (routes.length) {
+          cur.triage = Object.assign({ model: 'haiku', maxPerPass: 5 }, cur.triage || {}, { routes: Object.fromEntries(routes.map(r => [r.label, r.desc])) });
+          if (String(p.model || '').trim()) cur.triage.model = String(p.model).trim();
+          if (cur.linearProjectId) { try { await ensureRouteLabels(cur.linearProjectId, routes.map(r => r.label)); } catch (e) { return { ok: false, out: '라벨 확보 실패: ' + e.message }; } }
+        } else delete cur.triage;   // 라우트 전부 삭제 = 자동 분류 끔
+      }
+      writeFileSync(pf, JSON.stringify(cur, null, 2) + '\n');
+      return { ok: true, out: '📦 제품 설정 저장 — 즉시 적용' };
     }
     case 'save-config-raw': {
       if (!lid) return { ok: false }; let obj = p.config;
@@ -477,6 +565,12 @@ const server = http.createServer((req, res) => {
   // 벤더링된 정적 에셋(Oat UI 등) — 무빌드. 파일명 화이트리스트로 경로 탈출 차단.
   if (req.method === 'GET' && u.pathname.startsWith('/vendor/')) { const name = u.pathname.slice(8); if (!/^[a-zA-Z0-9._-]+$/.test(name)) { res.writeHead(400); res.end('bad'); return; } const body = readText(`${ROOT}/vendor/${name}`); if (!body) { res.writeHead(404); res.end('not found'); return; } const ct = name.endsWith('.css') ? 'text/css; charset=utf-8' : name.endsWith('.js') ? 'text/javascript; charset=utf-8' : 'application/octet-stream'; res.writeHead(200, { 'content-type': ct, 'cache-control': 'max-age=3600' }); res.end(body); return; }
   if (req.method === 'GET' && u.pathname === '/api/status') { res.writeHead(200, { 'content-type': 'application/json' }); res.end(JSON.stringify(status())); return; }
+  if (req.method === 'GET' && u.pathname === '/api/linear/teams') {   // "+ 새 제품" 모달의 팀 선택용 (키 없거나 실패 → 빈 목록 + error 필드로 loud)
+    linearGQL(`query{ teams(first:20){ nodes{ id name } } }`)
+      .then(t => { res.writeHead(200, { 'content-type': 'application/json' }); res.end(JSON.stringify({ teams: t?.teams?.nodes || [] })); })
+      .catch(e => { res.writeHead(200, { 'content-type': 'application/json' }); res.end(JSON.stringify({ teams: [], error: e.message })); });
+    return;
+  }
   if (req.method === 'GET' && u.pathname === '/api/session') { res.writeHead(200, { 'content-type': 'text/plain; charset=utf-8' }); res.end(sessionText(u)); return; }
   if (req.method === 'GET' && u.pathname === '/api/mission') { res.writeHead(200, { 'content-type': 'text/plain; charset=utf-8' }); res.end(promptText(u)); return; }
   if (req.method === 'GET' && u.pathname === '/api/config') { const lid = u.searchParams.get('loop'); res.writeHead(200, { 'content-type': 'application/json' }); res.end(JSON.stringify(readJSON(cfgPath(lid)) || {}, null, 2)); return; }
