@@ -9,9 +9,12 @@ ID="${LOOP_ISSUE:?LOOP_ISSUE 미설정}"
 ROOT="$LOOPS_HOME"; STATE=$ROOT/loops/$LOOP/state; CFG=$ROOT/loops/$LOOP/config.json
 WTV="$PWD"
 REPO="$(cfgval "$CFG" repo)"
+PIDF="$STATE/verify/$ID.pid"
+mkdir -p "$STATE/verify"; echo $$ > "$PIDF"   # 생존 신호(worker state/live/*.pid와 동형): cmux 재시작 등으로 트랩 없이 죽으면 cleanup-terminal의 vv-리퍼가 시체로 감지해 탭·worktree를 회수한다.
 # 종료 시(성공/실패 무관) 검증 worktree 자가 정리 — 크래시로 남으면 cleanup-issue.sh가 -vf도 함께 걷는다(2중 안전망).
 # 탭 타이틀도 ⏹로 — 끝난 탭이 🔎 dedup(spawn-verifier 중복 방지)을 막지 않게.
 cleanup(){
+  rm -f "$PIDF"
   cd "$REPO" 2>/dev/null && git worktree remove --force "$WTV" 2>/dev/null
   if [[ -n "${CMUX_BIN:-}" ]]; then
     local wref="$("$CMUX_BIN" list-workspaces 2>/dev/null | grep -iE "🔎[[:space:]]+${LOOP}[[:space:]]+${ID}([[:space:]]|\$)" | grep -oE 'workspace:[0-9]+' | head -1)"

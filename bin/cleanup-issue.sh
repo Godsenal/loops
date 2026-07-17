@@ -18,13 +18,15 @@ WT="${PREFIX}-${slug}"; BR="${BRPFX}/${slug}"
 did=0
 
 # 1. cmux 워크스페이스 닫기. ref(workspace:N)는 불안정 → 제목으로 매칭(대시보드 tabByIssue 패턴과 동일).
-#    워커 탭(🛠) + resume 탭(↩) 둘 다. ID 뒤는 공백/줄끝으로 경계 → LIN-12 가 LIN-123 을 잘못 잡지 않게.
+#    워커 🛠·resume ↩·종료마킹 ⏹ + 검증 탭 🧪(validator)·🔎(verifier)까지. ID 뒤는 공백/줄끝 경계 → LIN-12가 LIN-123을 오매칭 안 하게.
+#    (🧪/🔎는 각 run이 EXIT 트랩으로 자가 정리하지만, 트랩 없이 죽은 라이브 타이틀 탭의 2중 안전망 — vv-리퍼가 상시 걷지만 여기서도 확실히.)
 if [[ -n "$CMUX" ]]; then
-  refs="$("$CMUX" list-workspaces 2>/dev/null | grep -iE "(🛠|↩|⏹)[[:space:]]+${LOOP}[[:space:]]+${ID}([[:space:]]|\$)" | grep -oE 'workspace:[0-9]+')"
+  refs="$("$CMUX" list-workspaces 2>/dev/null | grep -iE "(🛠|↩|⏹|🧪|🔎)[[:space:]]+${LOOP}[[:space:]]+${ID}([[:space:]]|\$)" | grep -oE 'workspace:[0-9]+')"
   for r in ${(f)refs}; do "$CMUX" close-workspace --workspace "$r" >/dev/null 2>&1 && did=1; done
 fi
 # 상주 monitor를 close-workspace로 죽이면 worker-run의 on_exit trap이 못 탈 수 있다 → stale pidfile 직접 걷기(멱등).
-rm -f "$STATE/live/$ID.pid" 2>/dev/null
+# 워커(live)·validator(validate)·verifier(verify) pidfile 모두 — 탭을 강제로 닫으면 트랩이 못 지운 잔재가 남을 수 있다.
+rm -f "$STATE/live/$ID.pid" "$STATE/validate/$ID.pid" "$STATE/verify/$ID.pid" 2>/dev/null
 
 # 2. worktree·브랜치 제거(멱등 — 없으면 조용히 통과). PREFIX/REPO 비면 경로 사고 방지로 건너뜀.
 #    검증 전용 worktree(${WT}-vf verifier, ${WT}-vd validator)도 함께 — 각 run이 자가 정리하지만 크래시 잔재의 2중 안전망.

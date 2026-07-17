@@ -154,3 +154,59 @@ if (( linear_n > 0 && TAB_TRUTH )); then
     if [[ -n "${CLEANUP_DRY_RUN:-}" ]]; then echo "  [dry-run] backlog 잔재 worktree → clean $id (${PREFIX}-$sl)"; else "$ROOT/bin/cleanup-issue.sh" "$LOOP" "$id"; fi
   done
 fi
+
+# 6) validator(🧪)/verifier(🔎) 고아 정리 — Linear 무관, TAB_TRUTH(cmux 목록이 신선=빈 응답 아님)만 필요. ──
+#    검증자/검증기는 detached -vd/-vf worktree에서 headless로 돌다 EXIT 트랩으로 자가 정리하는데, cmux 앱 재시작이 트랩 없이
+#    프로세스를 죽이면 (a) 타이틀 잃은 맨셸 탭 + (b) 남은 -vd/-vf worktree가 어떤 리퍼에도 안 걸려 누적됐다(sweep_panels=인프라
+#    탭만 · watchdog=🛠 워커 pidfile만 — 검증 탭은 사각). validator/verifier-run이 시작 시 남기는 pidfile로 생존을 판별해
+#    "죽은 것"만 탭 close + worktree 제거한다. 실행 중(pidfile 생존)·방금 스폰(🧪 타이틀+pidfile 부재)은 보수적 보존.
+#    탭·worktree 정리뿐 — Linear 이동/머지/force-push 없음. cleanup-issue와 겹쳐도 remove는 멱등.
+if [[ -n "$CMUX" && $TAB_TRUTH -eq 1 ]]; then
+  PFXBASE="${PREFIX:t}"
+  # 살아있는 검증 pidfile의 슬러그 집합 — worktree·맨셸 회수의 veto(cmux 스폰 실패 시 탭 없이 도는 headless 폴백 실행 보호).
+  typeset -A VV_LIVE
+  for pf in "$STATE"/validate/*.pid(N) "$STATE"/verify/*.pid(N); do
+    ppid="$(cat "$pf" 2>/dev/null)"
+    [[ -n "$ppid" ]] && kill -0 "$ppid" 2>/dev/null && VV_LIVE[$(slugof "${pf:t:r}")]=1
+  done
+  vv_closed=0; vv_wt=0
+  # 6a) 🧪/🔎 라이브 타이틀 탭 → pidfile로 시체 판별(worker close_if_corpse와 동일 보수성: pidfile 부재=방금 스폰 → 보존).
+  while IFS= read -r line; do
+    ref="$(print -r -- "$line" | grep -oE 'workspace:[0-9]+' | head -1)"; [[ -z "$ref" ]] && continue
+    vid="$(print -r -- "$line" | sed -E 's/[[:space:]]*\[selected\][[:space:]]*$//' | awk '{print $NF}')"; [[ -z "$vid" ]] && continue
+    if print -r -- "$line" | grep -qE "🧪[[:space:]]+${LOOP}[[:space:]]"; then vdir=validate; vsfx=vd; else vdir=verify; vsfx=vf; fi
+    pidf="$STATE/$vdir/$vid.pid"
+    [[ -f "$pidf" ]] && kill -0 "$(cat "$pidf" 2>/dev/null)" 2>/dev/null && continue   # 실행 중 → 보존
+    [[ -f "$pidf" ]] || continue                                                        # pidfile 부재 → 보수적 보존(끝나면 맨셸로 떨어져 6b가 회수)
+    vwt="${PREFIX}-$(slugof "$vid")-${vsfx}"
+    if [[ -n "${CLEANUP_DRY_RUN:-}" ]]; then echo "  [dry-run] vv-corpse → close $ref (${vsfx} $vid) + rm $vwt"; continue; fi
+    "$CMUX" close-workspace --workspace "$ref" >/dev/null 2>&1 && (( vv_closed++ ))
+    rm -f "$pidf" 2>/dev/null
+    git -C "$REPO" worktree remove --force "$vwt" 2>/dev/null && (( vv_wt++ ))
+  done < <(print -r -- "$CMUX_TABS" | grep -iE "(🧪|🔎)[[:space:]]+${LOOP}[[:space:]]")
+  # 6b) 맨셸 탭(타이틀이 -vd/-vf cwd로 떨어짐 = --command 종료됨 → 프로세스 없음) → 회수. 살아있는 슬러그는 veto(방어).
+  while IFS= read -r line; do
+    ref="$(print -r -- "$line" | grep -oE 'workspace:[0-9]+' | head -1)"; [[ -z "$ref" ]] && continue
+    base="$(print -r -- "$line" | grep -oE "${PFXBASE}-[a-z0-9][a-z0-9-]*-v[df]" | head -1)"; [[ -z "$base" ]] && continue
+    vsfx="${base##*-}"; vslug="${base#${PFXBASE}-}"; vslug="${vslug%-${vsfx}}"
+    [[ -n "${VV_LIVE[$vslug]:-}" ]] && continue
+    if [[ -n "${CLEANUP_DRY_RUN:-}" ]]; then echo "  [dry-run] vv-shell → close $ref ($base)"; continue; fi
+    "$CMUX" close-workspace --workspace "$ref" >/dev/null 2>&1 && (( vv_closed++ ))
+    git -C "$REPO" worktree remove --force "${PREFIX}-${vslug}-${vsfx}" 2>/dev/null && (( vv_wt++ ))
+  done < <(print -r -- "$CMUX_TABS" | grep -iE "${PFXBASE}-[a-z0-9][a-z0-9-]*-v[df]([[:space:]]|\$)")
+  # 6c) 탭 없는 -vd/-vf worktree litter(트랩 없이 죽어 worktree만 남음, 게이트 제안이 터미널에 안 가 cleanup-issue -vd가 안 돎). 살아있는 슬러그는 veto.
+  while IFS= read -r p; do
+    case "$p" in
+      "${PREFIX}-"*"-vd") vsfx=vd;; "${PREFIX}-"*"-vf") vsfx=vf;; *) continue;;
+    esac
+    vslug="${p#${PREFIX}-}"; vslug="${vslug%-${vsfx}}"
+    [[ -n "${VV_LIVE[$vslug]:-}" ]] && continue
+    if [[ -n "${CLEANUP_DRY_RUN:-}" ]]; then echo "  [dry-run] vv-litter → rm $p"; continue; fi
+    git -C "$REPO" worktree remove --force "$p" 2>/dev/null && (( vv_wt++ ))
+  done < <(git -C "$REPO" worktree list --porcelain 2>/dev/null | sed -n 's/^worktree //p')
+  git -C "$REPO" worktree prune 2>/dev/null
+  if (( vv_closed > 0 || vv_wt > 0 )); then
+    ts=$(date '+%s'); print -r -- "{\"ts\":$ts,\"type\":\"validate\",\"event\":\"vv-reaped\",\"tabs\":$vv_closed,\"worktrees\":$vv_wt}" >> "$STATE/runs.jsonl"
+    echo "vv-reaper $LOOP — 고아 검증 탭 ${vv_closed} · worktree ${vv_wt} 회수"
+  fi
+fi
