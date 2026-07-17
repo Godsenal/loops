@@ -85,6 +85,13 @@ textarea{width:100%;font:12.5px/1.55 var(--mono);min-height:160px;resize:vertica
 .loopitem.sel::before{content:"";position:absolute;left:-1px;top:9px;bottom:9px;width:3px;border-radius:0 3px 3px 0;background:var(--signal)}
 .loopitem .n{font:600 13.5px/1.25 var(--sans);letter-spacing:-.1px}
 .loopitem .m{font-size:11px;color:var(--muted-foreground);margin-top:3px}
+/* product 그룹 헤더 — 콘솔 섹션 라벨 톤(mono·uppercase). 🏷n = 오늘 triage 분류 건수(title=최근 라우팅). */
+.prodhead{display:flex;align-items:center;gap:6px;margin:12px 2px 5px;padding:0 5px;font:600 10.5px/1 var(--mono);letter-spacing:.08em;text-transform:uppercase;color:var(--muted-foreground)}
+#looplist .prodhead:first-child{margin-top:2px}
+.prodhead .pn{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.prodhead a{color:var(--muted-foreground);text-decoration:none}
+.prodhead a:hover{color:var(--foreground)}
+.prodhead .tt{margin-left:auto;cursor:default;font-variant-numeric:tabular-nums}
 /* ===== main ===== */
 #main{flex:1;overflow-y:auto;overflow-x:hidden;padding:22px 28px 48px}
 .row{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
@@ -231,7 +238,10 @@ function delLoop(){if(!confirm(sel+' loop 삭제? config/mission/state 제거 (w
 function render(d){
  lastData=d;
  if(!sel&&d.loops[0])sel=d.loops[0].id;
- document.getElementById('looplist').innerHTML=d.loops.map(function(L){var c=L.counts||{};var tot=(c.Backlog||0)+(c['In Progress']||0)+(c['In Review']||0);return '<div class="loopitem'+(L.id===sel?' sel':'')+'" onclick="selectLoop(\''+L.id+'\')"><div class="n">'+L.emoji+' '+esc(L.name)+'</div><div class="m"><span class="dot '+(L.enabled?(L.paused?'pause':'on'):'off')+'"></span>'+(L.enabled?(L.paused?'paused':'on'):'off')+' · '+tot+' 작업'+(L.orchRunning?' <span class="spin">⏳</span>실행중':'')+(L.attentionCount>0?' <span style="color:var(--danger)">🔴'+L.attentionCount+'</span>':'')+(L.nextTs?' · 다음 '+rel(L.nextTs):'')+'</div></div>';}).join('')||'<div class=muted style="padding:8px">loop 없음</div>';
+ var loopItem=function(L){var c=L.counts||{};var tot=(c.Backlog||0)+(c['In Progress']||0)+(c['In Review']||0);return '<div class="loopitem'+(L.id===sel?' sel':'')+'" onclick="selectLoop(\''+L.id+'\')"><div class="n">'+L.emoji+' '+esc(L.name)+'</div><div class="m"><span class="dot '+(L.enabled?(L.paused?'pause':'on'):'off')+'"></span>'+(L.enabled?(L.paused?'paused':'on'):'off')+' · '+tot+' 작업'+(L.orchRunning?' <span class="spin">⏳</span>실행중':'')+(L.attentionCount>0?' <span style="color:var(--danger)">🔴'+L.attentionCount+'</span>':'')+(L.nextTs?' · 다음 '+rel(L.nextTs):'')+'</div></div>';};
+ // product 단위 그룹핑: 같은 product의 루프들 위에 헤더 1줄(제품명·Linear 링크·오늘 triage 건수). product 없는 루프는 헤더 없이 기존 그대로.
+ var pgroups={},porder=[];d.loops.forEach(function(L){var k=L.product||'';if(!pgroups[k]){pgroups[k]=[];porder.push(k);}pgroups[k].push(L);});
+ document.getElementById('looplist').innerHTML=porder.map(function(k){var body=pgroups[k].map(loopItem).join('');if(!k)return body;var P=(d.products||{})[k]||{};var tt=(P.triageLast||[]).map(function(e){return e.issue+'→'+e.label;}).join(' · ');return '<div class="prodhead"><span class="pn">📦 '+esc(P.name||k)+'</span>'+(P.linearProjectUrl?'<a href="'+P.linearProjectUrl+'" target="_blank" title="Linear 프로젝트 열기">↗</a>':'')+(P.triage?'<span class="tt" title="'+esc(tt||'오늘 분류 없음')+'">🏷'+(P.triageToday||0)+'</span>':'')+'</div>'+body;}).join('')||'<div class=muted style="padding:8px">loop 없음</div>';
  var attn=d.loops.reduce(function(s,L){return s+(L.attentionCount||0);},0);
  document.getElementById('attnsum').innerHTML=attn>0?'<span class="attn" onclick="selectAttention()" title="개입 필요한 첫 loop로 이동">🔴 '+attn+'건 개입 필요</span>':'<span class="clean">✓ clean</span>';
  var gd=d.dispatcher;

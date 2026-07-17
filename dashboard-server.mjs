@@ -8,6 +8,7 @@ import { execFile, execFileSync, spawn } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 import { dirname } from 'node:path';
 import { loadEnv, setEnvVar } from './bin/env-file.mjs';
+import { mergeProduct } from './bin/loop-config.mjs';
 
 const ROOT = process.env.LOOPS_HOME || dirname(fileURLToPath(import.meta.url));
 const ENV = loadEnv(ROOT);
@@ -31,6 +32,13 @@ const wtPath = (cfg, id) => `${cfg.worktreePrefix || ''}-${slugOf(id)}`;
 let LINEAR_KEY = ENV.LINEAR_API_KEY || process.env.LINEAR_API_KEY || '';   // 런타임 보유 — UI에서 즉시 갱신, loops.env에 영속화. status는 boolean만 노출.
 
 function listLoopIds() { try { return readdirSync(LOOPS).filter(d => existsSync(`${LOOPS}/${d}/config.json`)); } catch { return []; } }
+// 루프 config 읽기(제품 상속 머지 포함). 읽기 전용 표시/조회용 — 쓰기(save-config 등)는 여전히 루프 파일만 만진다.
+// product 링크가 깨져도 UI는 루프 자체 필드로 계속 뜬다(loud 로그 + 미상속) — 대시보드는 관측 도구라 죽지 않는 게 우선.
+function loopCfg(lid) {
+  const c = readJSON(cfgPath(lid)) || {};
+  try { return mergeProduct(ROOT, c); }
+  catch (e) { console.error(`[config] ${lid}: product '${c.product}' 머지 실패 — ${e.message}`); return c; }
+}
 function tabsAll() {
   try {
     return execFileSync(CMUX, ['list-workspaces'], { encoding: 'utf8', timeout: 4000 })
@@ -85,7 +93,7 @@ function prDataFromJson(j) {
 function refreshPRs() {
   const byRepo = {};   // repo 경로 → 우리가 관심있는 브랜치 Set
   for (const lid of listLoopIds()) {
-    const cfg = readJSON(cfgPath(lid)) || {}; const repo = cfg.repo; if (!repo) continue;
+    const cfg = loopCfg(lid); const repo = cfg.repo; if (!repo) continue;
     const snap = readJSON(`${LOOPS}/${lid}/state/snapshot.json`);
     (byRepo[repo] ||= new Set());
     (snap?.issues || []).forEach(i => byRepo[repo].add(branchOf(cfg, lid, i.id)));
@@ -107,7 +115,7 @@ function refreshPRs() {
 
 function loopStatus(lid, allTabs) {
   const dir = `${LOOPS}/${lid}`, st = `${dir}/state`;
-  const cfg = readJSON(`${dir}/config.json`) || {};
+  const cfg = loopCfg(lid);
   const snap = readJSON(`${st}/snapshot.json`);
   const f = feedOf(st);
   const order = { 'In Progress': 0, 'In Review': 1, 'Backlog': 2, 'Done': 3, 'Canceled': 4 };
@@ -161,6 +169,7 @@ function loopStatus(lid, allTabs) {
   const nextTs = (gd.running && !existsSync(`${st}/PAUSED`) && cfg.enabled !== false && nextFile) ? +nextFile : null;
   return {
     id: lid, name: cfg.name || lid, emoji: cfg.emoji || '🔁', enabled: cfg.enabled !== false,
+    product: cfg.product || null,   // 제품 계층 — 사이드바가 product 단위로 그룹핑
     repo: cfg.repo || '', linearProjectUrl: cfg.linearProjectUrl || '', maxWorkers: cfg.maxWorkers || 2,
     delivery: cfg.delivery || 'pr',
     schedule: cfg.schedule || { intervalSec: 3600, startAt: null }, paused: existsSync(`${st}/PAUSED`),
@@ -178,7 +187,28 @@ function loopStatus(lid, allTabs) {
 }
 function status() {
   const allTabs = tabsAll();
-  return { now: Math.floor(Date.now() / 1000), dispatcher: globalDispatcher(), awake: !!awakeStatus(), linearKey: !!LINEAR_KEY, telegram: telegramStatus(), loops: listLoopIds().map(l => loopStatus(l, allTabs)) };
+  return { now: Math.floor(Date.now() / 1000), dispatcher: globalDispatcher(), awake: !!awakeStatus(), linearKey: !!LINEAR_KEY, telegram: telegramStatus(), products: productsStatus(), loops: listLoopIds().map(l => loopStatus(l, allTabs)) };
+}
+
+// 제품 계층 메타(products/<id>/product.json) + triage 활동 — 사이드바 product 그룹 헤더가 소비.
+// products/ 미존재·파싱 실패는 빈 객체(제품 계층은 opt-in — 없음이 정상 경로).
+function productsStatus() {
+  const out = {};
+  let ids = [];
+  try { ids = readdirSync(`${ROOT}/products`).filter(d => existsSync(`${ROOT}/products/${d}/product.json`)); } catch { return out; }
+  const d0 = new Date(); d0.setHours(0, 0, 0, 0); const t0 = Math.floor(d0.getTime() / 1000);
+  for (const pid of ids) {
+    const pj = readJSON(`${ROOT}/products/${pid}/product.json`); if (!pj) continue;
+    let ev = [];
+    try { ev = readText(`${ROOT}/products/${pid}/state/runs.jsonl`).trim().split('\n').filter(Boolean).map(l => { try { return JSON.parse(l); } catch { return null; } }).filter(e => e && e.type === 'triage'); } catch {}
+    out[pid] = {
+      name: pj.name || pid, linearProjectUrl: pj.linearProjectUrl || '',
+      triage: !!(pj.triage && pj.triage.routes),
+      triageToday: ev.filter(e => e.ts >= t0).length,
+      triageLast: ev.slice(-3).reverse().map(e => ({ issue: e.issue, label: e.label })),
+    };
+  }
+  return out;
 }
 
 function sh(cmd, args) { return new Promise(r => execFile(cmd, args, { timeout: 12000 }, (e, so, se) => r({ ok: !e, out: (so || '') + (se || '') }))); }
@@ -313,8 +343,8 @@ async function control(a, p) {
     }
     case 'create-issue': {   // Linear 이슈 생성 → 루프의 project Backlog. start:true 면 즉시 워커 spawn. (텔레그램 에이전트/향후 대시보드 "+태스크"용)
       if (!lid) return { ok: false, out: 'no loop' };
-      const cfg = readJSON(cfgPath(lid)); if (!cfg) return { ok: false, out: 'no config' };
-      const pid = cfg.linearProjectId; if (!pid) return { ok: false, out: lid + ' config에 linearProjectId 없음' };
+      const cfg = loopCfg(lid); if (!cfg || !Object.keys(cfg).length) return { ok: false, out: 'no config' };
+      const pid = cfg.linearProjectId; if (!pid) return { ok: false, out: lid + ' config에 linearProjectId 없음(product 상속 포함)' };
       const title = (p.title || '').trim(); if (!title) return { ok: false, out: 'title 필요' };
       let iss;
       try {
