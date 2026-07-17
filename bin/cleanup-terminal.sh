@@ -18,6 +18,7 @@ LOOP="${1:?usage: cleanup-terminal.sh <loop-id>}"
 ROOT="$LOOPS_HOME"; LOOPDIR=$ROOT/loops/$LOOP; STATE=$LOOPDIR/state; CFG=$LOOPDIR/config.json
 [[ -f "$CFG" ]] || { echo "loop '$LOOP' config 없음 — skip"; exit 0; }
 REPO="$(cfgval "$CFG" repo)"; PREFIX="$(cfgval "$CFG" worktreePrefix)"; PID="$(cfgval "$CFG" linearProjectId)"
+LABEL="$(cfgval "$CFG" linearLabel)"   # 공유 프로젝트 라벨 분리 — 비면 전체. TERMINAL/STARTED/BACKLOG 집합을 이 라벨로 스코프.
 BRPFX="$(cfgval "$CFG" branchPrefix)"; [[ -z "$BRPFX" ]] && BRPFX="loop-$LOOP"
 DELIVERY="$(cfgval "$CFG" delivery)"; [[ -z "$DELIVERY" ]] && DELIVERY=pr
 CMUX="$CMUX_BIN"; GH="$GH_BIN"
@@ -39,7 +40,7 @@ if [[ -n "$PID" && -n "${LINEAR_API_KEY:-}" ]]; then
     [[ "$t" == "completed" || "$t" == "canceled" ]] && TERMINAL[$sl]=1
     [[ "$t" == "started" ]] && STARTED[$sl]=1
     [[ "$t" == "backlog" ]] && BACKLOG[$sl]=1
-  done < <(LINEAR_API_KEY="${LINEAR_API_KEY:-}" node "$ROOT/bin/linear-states.mjs" "$PID" 2>"$lserr")
+  done < <(LINEAR_API_KEY="${LINEAR_API_KEY:-}" node "$ROOT/bin/linear-states.mjs" "$PID" "$LABEL" 2>"$lserr")
   [[ -s "$lserr" ]] && echo "⚠️ cleanup-terminal $LOOP — $(<"$lserr")" >&2
   rm -f "$lserr"
   (( linear_n == 0 )) && echo "⚠️ cleanup-terminal $LOOP — LINEAR_API_KEY 있으나 linear-states 0건(만료/네트워크 의심) → snapshot 폴백" >&2

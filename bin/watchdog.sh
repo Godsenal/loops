@@ -32,6 +32,7 @@ LOOP="${1:?usage: watchdog.sh <loop-id>}"
 ROOT="$LOOPS_HOME"; LOOPDIR=$ROOT/loops/$LOOP; STATE=$LOOPDIR/state; CFG=$LOOPDIR/config.json
 [[ -f "$CFG" ]] || { echo "loop '$LOOP' config 없음 — skip"; exit 0; }
 REPO="$(cfgval "$CFG" repo)"; PREFIX="$(cfgval "$CFG" worktreePrefix)"; PID="$(cfgval "$CFG" linearProjectId)"
+LABEL="$(cfgval "$CFG" linearLabel)"   # 공유 프로젝트 라벨 분리 — 비면 프로젝트 전체(기존 동작). started/terminal 집합을 이 라벨로 스코프.
 BRPFX="$(cfgval "$CFG" branchPrefix)"; [[ -z "$BRPFX" ]] && BRPFX="loop-$LOOP"
 DELIVERY="$(cfgval "$CFG" delivery)"; [[ -z "$DELIVERY" ]] && DELIVERY=pr
 BASEREF="$(cfgval "$CFG" baseRef)"; [[ -z "$BASEREF" ]] && BASEREF=origin/develop   # 미머티리얼라이즈 시체의 "커밋 0" 판정 기준.
@@ -103,7 +104,7 @@ if [[ -n "$PID" && -n "${LINEAR_API_KEY:-}" ]]; then
     sl="$(slugof "$id")"; SLUGID[$sl]="$id"; STATE_OF[$sl]="$t"; (( linear_n++ ))
     [[ "$t" == "started" ]] && STARTED[$sl]=1
     [[ "$t" == "completed" || "$t" == "canceled" ]] && TERMINAL[$sl]=1
-  done < <(LINEAR_API_KEY="${LINEAR_API_KEY:-}" node "$ROOT/bin/linear-states.mjs" "$PID" 2>/dev/null)
+  done < <(LINEAR_API_KEY="${LINEAR_API_KEY:-}" node "$ROOT/bin/linear-states.mjs" "$PID" "$LABEL" 2>/dev/null)
 fi
 
 # 1b) 폴백 — Linear 0건이면 snapshot In Progress를 in-flight로(구버전 동작). Done/Canceled는 terminal veto.

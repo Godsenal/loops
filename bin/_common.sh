@@ -15,7 +15,10 @@ export DEFAULT_REPO="${DEFAULT_REPO:-}"
 # config.json의 dot-path 값을 읽는 단일 헬퍼. usage: cfgval <file> <dotpath>
 # 부재/null/undefined → "" , 그 외 stringify(0→"0", false→"false"). stderr는 묻지 않음(loud).
 # stderr를 묻고 싶은 호출자는 `cfgval ... 2>/dev/null` 로 감싼다(예: dispatch.sh의 field).
-cfgval(){ node -e 'const c=JSON.parse(require("fs").readFileSync(process.argv[1]));const v=process.argv[2].split(".").reduce((o,p)=>o&&o[p],c);process.stdout.write(v==null?"":String(v))' "$1" "$2"; }
+# 제품 상속: config에 "product" 링크가 있고 값이 비어 있으면, 화이트리스트 키에 한해
+# $LOOPS_HOME/products/<product>/product.json 에서 채운다(루프 값 우선 — bin/loop-config.mjs와 동일 규칙·동일 화이트리스트).
+# 선언된 product 파일을 못 읽으면 stderr로 loud하게 알리고 빈 값 반환(호출자의 기존 "부재" 처리 경로).
+cfgval(){ node -e 'const fs=require("fs"),[f,p]=process.argv.slice(1);const c=JSON.parse(fs.readFileSync(f));const pick=o=>p.split(".").reduce((a,k)=>a&&a[k],o);let v=pick(c);const W=["repo","baseRef","prBase","claudeCmd","linearProjectId","linearProjectUrl"];if(v==null&&c.product&&W.includes(p.split(".")[0])){const pf=(process.env.LOOPS_HOME||"")+"/products/"+c.product+"/product.json";try{v=pick(JSON.parse(fs.readFileSync(pf)))}catch(e){console.error("cfgval: product '"+c.product+"' 읽기 실패("+pf+") — "+e.message)}}process.stdout.write(v==null?"":String(v))' "$1" "$2"; }
 
 # 이슈 ID → slug: 소문자화 + 비영숫자→`-` + trailing `-` 전부 제거.
 # worktree(${PREFIX}-<slug>)·브랜치(${BRPFX}/<slug>)·cmux 탭 매칭·terminal 정리가 모두 이 규칙에 걸려 있어

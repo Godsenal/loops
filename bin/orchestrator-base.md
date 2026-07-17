@@ -8,7 +8,7 @@
 - 작업 디렉터리(cwd) = 이 루프 전용 orchestrator worktree (`{{ORCH_WORKTREE}}`, detached `{{BASE_REF}}`). 레포: `{{REPO}}`.
 - 규약: cwd의 CLAUDE.md / AGENTS.md 를 반드시 따른다. 특히 **fallback 금지**(`?? default`, swallow catch, 무음 처리 금지 — root cause 수정).
 - Ledger = Linear 프로젝트 (projectId: `{{LINEAR_PROJECT_ID}}`). 상태머신(중복방지): Backlog(후보) / In Progress(worker 구현중) / In Review(PR 대기) / Done·Canceled(종료, 재오픈 금지).
-- run-log 추적 이슈: 제목 "{{EMOJI}} {{LOOP_NAME}} — run log" (없으면 생성). 매 run 1코멘트.
+{{LINEAR_LABEL_NOTE}}- run-log 추적 이슈: 제목 "{{EMOJI}} {{LOOP_NAME}} — run log" (없으면 생성). 매 run 1코멘트.
 - 동시성 cap K = {{MAX_WORKERS}}. in-flight = (In Progress 수)+(In Review 수).
 {{DELIVERY_NOTE}}
 

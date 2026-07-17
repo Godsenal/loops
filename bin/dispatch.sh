@@ -47,6 +47,27 @@ budget_check(){ node -e 'const fs=require("fs"),[cfgF,costF]=process.argv.slice(
 next_calc(){ node -e 'const c=JSON.parse(require("fs").readFileSync(process.argv[1]));const s=c.schedule||{};const iv=Math.max(60,s.intervalSec||3600);const now=Math.floor(Date.now()/1000);let f=now;if(s.startAt){const m=String(s.startAt).match(/(\d{1,2}):(\d{2})/);if(m){const d=new Date();d.setHours(+m[1],+m[2],0,0);f=Math.floor(d.getTime()/1000);while(f<=now)f+=iv;}}console.log(f)' "$1" 2>/dev/null; }
 ivof(){ node -e 'const c=JSON.parse(require("fs").readFileSync(process.argv[1]));console.log(Math.max(60,(c.schedule||{}).intervalSec||3600))' "$1" 2>/dev/null; }
 
+# ── drain 모드 발사 게이트 (config drain: true | {discoverySec}) ──
+# "쌓이면 계속 처리, 비면 조용" 모드. drain 루프는 스케줄 heartbeat마다 이걸 통과해야 실제 LLM 사이클(orchestrator)을 태운다:
+#   ① discovery 주기(기본 600s) 도래 → 발사. backlog가 비어도 이걸로 발굴 소스(Sentry 등)를 주기적으로 폴링해 새 이슈를 채운다.
+#   ② 드레인 가능 backlog(라벨 스코프 · run-log와 human-gate 이슈 제외 — 워커가 못 집어가는 상주 이슈가 게이트를
+#      영구로 열지 않게, linear-drain-check.mjs) > 0 && in-flight<cap → 드레인할 일 있음 → 발사.
+# 둘 다 아니면 이번 발사는 스킵(next_fire만 전진 · LLM 미기동 → idle 토큰비용 0). on.linearNew는 새 이슈 도착 시 즉시 발사(그대로).
+# Linear 미가용(비0 종료)이면 보수적으로 발사 — 신호가 없을 때 루프를 멈추지 않는다. 반환 0=발사, 1=스킵.
+drain_should_fire(){ # $1=cfg $2=lstate
+  local cfg="$1" ls="$2" pid label cap disc last raw b s
+  disc="$(field "$cfg" drain.discoverySec)"; [[ -z "$disc" ]] && disc=600
+  last=$(cat "$ls/.last_discovery" 2>/dev/null || echo 0)
+  if (( now - last >= disc )); then echo "$now" > "$ls/.last_discovery"; return 0; fi   # ① 발굴 주기 도래
+  pid="$(field "$cfg" linearProjectId)"; label="$(field "$cfg" linearLabel)"
+  cap="$(field "$cfg" maxWorkers)"; [[ -z "$cap" ]] && cap=2
+  raw="$(LINEAR_API_KEY="${LINEAR_API_KEY:-}" node "$ROOT/bin/linear-drain-check.mjs" "$pid" "$label" 2>/dev/null)" || return 0   # Linear 미가용 → 보수적 발사
+  b="${raw%%$'\t'*}"; s="${raw##*$'\t'}"
+  [[ "$b" == <-> && "$s" == <-> ]] || return 0                             # 출력 이상 → 보수적 발사
+  (( b > 0 && s < cap )) && return 0                                       # ② 드레인할 backlog 있고 여유 슬롯 있음
+  return 1                                                                 # 아무 것도 없음 → 스킵
+}
+
 while true; do
   if [[ ! -f "$PAUSED" ]]; then
     for CFG in $ROOT/loops/*/config.json(N); do
@@ -67,6 +88,12 @@ while true; do
           print -r -- "{\"ts\":$now,\"type\":\"cycle\",\"event\":\"budget-skip\",\"note\":\"$bex\"}" >> "$lstate/runs.jsonl"
           continue
         fi
+        # drain 모드: 발사할 값어치(드레인할 backlog 또는 발굴 주기 도래)가 있을 때만 LLM 사이클을 태운다. 없으면 스킵.
+        draincfg="$(field "$CFG" drain)"
+        if [[ -n "$draincfg" && "$draincfg" != "false" ]] && ! drain_should_fire "$CFG" "$lstate"; then
+          iv=$(ivof "$CFG"); while (( nf <= now )); do nf=$(( nf + iv )); done; echo "$nf" > "$nextf"
+          continue
+        fi
         "$ROOT/bin/spawn-orchestrator.sh" "$lid" >> "$lstate/dispatcher.log" 2>&1 &
         iv=$(ivof "$CFG")
         while (( nf <= now )); do nf=$(( nf + iv )); done
@@ -85,6 +112,19 @@ while true; do
         [[ -f "$CFG" ]] || continue
         lid="$(field "$CFG" id)"; [[ -z "$lid" ]] && continue
         "$ROOT/bin/event-poll.sh" "$lid" >> "$ROOT/loops/$lid/state/run.log" 2>&1
+      done
+    fi
+
+    # ── triage: 제품(products/<id>) 상위 분류기 — 공유 Linear 프로젝트에 라벨 없이 쌓인 이슈를 routes로 분류해
+    #    라벨을 붙인다(≤60s). 라벨이 붙는 순간 해당 라벨 루프의 event-poll(linearNew)이 잡아 즉시 사이클 — 새 실행 경로 없음.
+    #    PAUSED 가드 안: 분류는 발사로 이어지는 스케줄링 성격이라 전역 정지 중엔 하지 않는다.
+    now=$(date +%s); lasttri=$(cat "$STATE/.last_triage" 2>/dev/null || echo 0)
+    if (( now - lasttri >= 60 )); then
+      echo "$now" > "$STATE/.last_triage"
+      for PJ in $ROOT/products/*/product.json(N); do
+        pdir="${PJ:h}"; pname="${PJ:h:t}"
+        mkdir -p "$pdir/state"
+        "$ROOT/bin/triage.sh" "$pname" >> "$pdir/state/triage.log" 2>&1
       done
     fi
 

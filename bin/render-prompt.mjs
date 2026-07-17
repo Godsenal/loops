@@ -4,10 +4,12 @@
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { dirname } from 'node:path';
+import { loadLoopConfig } from './loop-config.mjs';
 const ROOT = process.env.LOOPS_HOME || dirname(dirname(fileURLToPath(import.meta.url)));
 const [, , loopId, which = 'orchestrator'] = process.argv;
 if (!loopId) { console.error('usage: render-prompt.mjs <loop-id> [orchestrator|worker|verifier|validator|retro]'); process.exit(1); }
-const cfg = JSON.parse(readFileSync(`${ROOT}/loops/${loopId}/config.json`, 'utf8'));
+// 제품(product) 상속 머지 포함 — 선언된 product.json이 없으면 여기서 throw(비0 종료)로 run이 loud하게 실패한다.
+const cfg = loadLoopConfig(ROOT, loopId);
 let tpl = readFileSync(`${ROOT}/bin/${which}-base.md`, 'utf8');
 const prBase = cfg.prBase || 'develop';
 const delivery = cfg.delivery || 'pr';   // 'pr'(기본, PR만) | 'direct'(PR 없이 base에 직접 push)
@@ -40,6 +42,13 @@ let learnings = '';
 try { learnings = readFileSync(`${ROOT}/loops/${loopId}/state/learnings.md`, 'utf8').trim(); } catch {}
 vars.LEARNINGS = learnings
   ? `\n────────── LEARNINGS (retro가 이 루프의 실제 성과에서 추출한 교훈 — 발굴·구현 시 반영하라) ──────────\n${learnings}\n──────────────────────────────────────────────────────────────\n`
+  : '';
+
+// 하나의 Linear 프로젝트를 라벨로 나눠 여러 루프가 공유할 때(config linearLabel, 예: bug / feature-request).
+// 비면 블록 통째 생략 = 프로젝트 전체 담당(기존 단독-프로젝트 루프 동작 그대로, 하위호환).
+vars.LINEAR_LABEL = cfg.linearLabel || '';
+vars.LINEAR_LABEL_NOTE = cfg.linearLabel
+  ? `\n⚠️ **라벨 스코프 — 이 루프는 공유 Linear 프로젝트에서 \`${cfg.linearLabel}\` 라벨이 붙은 이슈만 담당한다.** 다른 라벨의 이슈는(다른 루프가 처리) **네 소관이 아니다** — 조회 결과에서 제외하고, 상태변경·코멘트·fan-out 어느 것도 하지 마라.\n  - **모든 Linear 조회**(STEP 1 In Review/In Progress, STEP 2 dedup 검색, STEP 3 Backlog 선택)에 이 라벨 필터를 건다. in-flight·cap 계산도 이 라벨 이슈만 센다.\n  - **STEP 2에서 새로 만드는 이슈에는 반드시 \`${cfg.linearLabel}\` 라벨을 부여**한다 — 안 붙이면 다른 루프도 못 보고 너도 다음 run(빈 컨텍스트)에서 못 본다.\n  - **STEP 4 snapshot·run-log**도 이 라벨 이슈만 집계한다.\n`
   : '';
 
 // 변경 반영 방식(worker 절차 4~ / orchestrator 안내). 기본 'pr'은 기존 동작 그대로, 'direct'는 base에 직접 push.

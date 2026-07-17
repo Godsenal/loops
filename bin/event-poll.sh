@@ -24,6 +24,7 @@ ON_LNEW="$(cfgval "$CFG" on.linearNew 2>/dev/null)"
 REPO="$(cfgval "$CFG" repo)"; PRBASE="$(cfgval "$CFG" prBase)"; [[ -z "$PRBASE" ]] && PRBASE=develop
 BRPFX="$(cfgval "$CFG" branchPrefix)"; [[ -z "$BRPFX" ]] && BRPFX="loop-$LOOP"
 PID="$(cfgval "$CFG" linearProjectId)"
+LABEL="$(cfgval "$CFG" linearLabel)"   # 공유 프로젝트 라벨 분리 — 비면 전체. linear-new 는 이 라벨의 신규 Backlog만 감지.
 EV="$STATE/events.json"
 
 # events.json 커서 read-modify-write: 새 값을 쓰고 **이전 값**을 출력 (빈 출력 = 첫 시드).
@@ -62,7 +63,7 @@ fi
 # ── Linear 신규 Backlog 이슈 (프로젝트 backlog 집합에 새 ID 등장) ──
 if [[ "$ON_LNEW" == "true" && -n "$PID" && -n "${LINEAR_API_KEY:-}" ]]; then
   # Linear 응답 자체가 비면(키 만료/네트워크) 커서를 건드리지 않는다 — 다음 성공 폴링 때 전부 "신규"로 오폭하는 것 방지.
-  lsout="$(LINEAR_API_KEY="${LINEAR_API_KEY:-}" node "$ROOT/bin/linear-states.mjs" "$PID" 2>/dev/null)"
+  lsout="$(LINEAR_API_KEY="${LINEAR_API_KEY:-}" node "$ROOT/bin/linear-states.mjs" "$PID" "$LABEL" 2>/dev/null)"
   if [[ -n "$lsout" ]]; then
     blist="$(print -r -- "$lsout" | awk -F'\t' '$2=="backlog"{print $1}')"
     fresh="$(print -r -- "$blist" | node -e '
