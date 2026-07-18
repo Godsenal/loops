@@ -34,18 +34,26 @@ ref="$(print -r -- "$out" | grep -oE 'workspace:[0-9]+' | head -1)"
 mat(){ "$CMUX" read-screen --workspace "$ref" --lines 1 >/dev/null 2>&1; }
 wait_mat(){ repeat "$1" { mat && return 0; sleep 0.5 }; return 1; }
 activate(){ osascript -e "tell application id \"${CMUX_BUNDLE_ID:-com.cmuxterm.app}\" to activate" >/dev/null 2>&1; }
+# 조용 모드(LOOPS_SPAWN_QUIET=1): 격상에서 앱 전면화(activate)·새 창(new-window)을 생략한다.
+# → cmux가 자꾸 앞으로 튀어나오거나 새 창이 뜨는 방해를 없앤다. 대가: cmux 창이 화면에 안 보이면
+#   (최소화·다른 Space) 탭이 렌더 안 돼 spawn이 큐잉(디스패처)되거나 폐기(워커)되고 다음 사이클에 재시도된다
+#   — 즉시 시작 보장이 약해진다(cmux를 보고 있으면 select만으로 뜨므로 평소엔 영향 적음).
+QUIET="${LOOPS_SPAWN_QUIET:-0}"
 
 if ! wait_mat 4; then   # ~2s — cmux PTY 컨텍스트(대화형)면 이 안에 뜬다
-  # 1차 격상: 활성 탭으로 선택 + 앱 전면화(백그라운드 탭은 렌더 안 됨 → 선택이 렌더를 강제)
+  # 1차 격상: 활성 탭으로 선택(렌더 유도). 조용 모드가 아니면 앱도 전면화.
   "$CMUX" select-workspace --workspace "$ref" >/dev/null 2>&1
-  activate
+  [[ "$QUIET" == 1 ]] || activate
   if ! wait_mat 4; then
-    # 2차 격상: 새 창(즉시 렌더됨)으로 이동 + 포커스 — 기존 창이 다른 Space/최소화 상태여도 통한다
-    wid="$("$CMUX" new-window 2>/dev/null | grep -oE '[0-9A-Fa-f-]{36}' | head -1)"
-    if [[ -n "$wid" ]]; then
-      "$CMUX" move-workspace-to-window --workspace "$ref" --window "$wid" >/dev/null 2>&1
-      "$CMUX" focus-window --window "$wid" >/dev/null 2>&1
-      activate
+    # 2차 격상: 새 창(즉시 렌더됨)으로 이동 + 포커스 — 기존 창이 다른 Space/최소화 상태여도 통한다.
+    # 조용 모드에선 생략(새 창·포커스 억제) → select만으로 못 뜨면 아래 QUEUE_OK/폐기로 떨어진다.
+    if [[ "$QUIET" != 1 ]]; then
+      wid="$("$CMUX" new-window 2>/dev/null | grep -oE '[0-9A-Fa-f-]{36}' | head -1)"
+      if [[ -n "$wid" ]]; then
+        "$CMUX" move-workspace-to-window --workspace "$ref" --window "$wid" >/dev/null 2>&1
+        "$CMUX" focus-window --window "$wid" >/dev/null 2>&1
+        activate
+      fi
     fi
     if ! wait_mat 6; then
       if [[ "${SPAWN_PANEL_QUEUE_OK:-0}" == 1 ]]; then
