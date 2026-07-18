@@ -199,7 +199,7 @@ h1{letter-spacing:-.4px;font-weight:700}
 <dialog id="smodal" class="lmodal" closedby="any"><div class="hd"><b id="stitle"></b><button aria-label="닫기" onclick="closeS()">✕</button></div><pre id="sbody"></pre></dialog>
 <dialog id="cmodal" class="lmodal" closedby="any"><div class="hd"><b>새 loop 만들기</b><button aria-label="닫기" onclick="closeC()">✕</button></div><div class="body">
  <div class="sec">🤖 AI로 만들기 (추천)</div>
- <textarea id="c_desc" aria-label="AI 루프 생성 프롬프트" placeholder="예: 웹뷰 리팩토링 루프 만들어줘 — webview의 거대 컴포넌트 분리하고 중복 로직 정리"></textarea>
+ <textarea id="c_desc" aria-label="AI 루프 생성 프롬프트" placeholder="예: 웹뷰 리팩토링 루프 만들어줘 — 거대 컴포넌트 분리하고 중복 로직 정리"></textarea>
  <div class="row" style="margin:8px 0 16px"><button class="p" onclick="buildLoop()">🤖 Claude로 생성</button> <span class="muted">탭에서 몇 가지 선택지(아키타입·repo·강도)에 답하면 mission·Linear·설정 구성 — "다 맡김"도 가능</span></div>
  <div class="fld" style="margin-bottom:12px"><label for="c_prod">제품</label><select id="c_prod" style="width:auto"></select> <input id="c_label" placeholder="담당 라벨 (예: Bug)" style="width:150px"> <span class="muted" style="font-size:11px">제품 하위 루프면 선택 — repo·Linear·계정은 제품에서 상속되고, 그 라벨 이슈만 담당</span></div>
  <div class="sec">또는 직접 입력</div>

@@ -1,156 +1,225 @@
-# Loops — 멀티 루프 자율 에이전트 플랫폼
+# Loops
 
-한 줄 mission만 주면 **주기적으로 도는 자율 Claude Code 에이전트("loop")** 를 여러 개 돌린다. 각 loop은 자기 도메인의 작업을 발굴(orchestrator)하고 worker가 1건씩 구현→PR 한다. **머지는 사람이** 한다.
+**한 줄 mission만 주면, 주기적으로 도는 자율 Claude Code 에이전트를 여러 개 돌리는 플랫폼.**
 
-- **여러 loop**: SEO 강화 / dead-code 정리 / 웹뷰 리팩토링 … 엔진은 공통, mission만 다름.
-- **AI 빌더**: "웹뷰 리팩토링 루프 만들어줘" → Claude가 mission + Linear 프로젝트 + config 자동 구성.
-- **대시보드**(localhost): loop 목록·이슈·세션·스케줄·🔴개입필요·mission/config 편집·생성/삭제.
-- **cmux 연동**: worker는 cmux 탭에서 라이브로 돌고, 대시보드에서 세션 열기/닫기.
+각 "loop"은 자기 도메인(SEO 강화 / dead-code 정리 / 버그 처리 / 웹뷰 리팩토링 …)의 작업을 스스로 발굴하고, worker가 1건씩 구현해 PR을 연다. **머지는 사람이 한다** — 엔진은 절대 merge·deploy·force-push 하지 않는다.
+
+엔진은 공통이고, loop끼리는 `mission.md`(무엇을·어떻게 발굴할지)와 `config.json`(repo·Linear·스케줄·동시성)만 다르다.
+
+```
+        ┌─────────────────────────  당신은 여기만  ─────────────────────────┐
+        │  mission 작성 · 🔴 human-gate 판단 · PR 리뷰 · 머지                  │
+        └───────────────────────────────────────────────────────────────────┘
+                                        │
+   dispatcher ──(스케줄)──▶ orchestrator ──(발굴·fan-out)──▶ worker ──▶ PR
+   (cmux 패널)              (헤드리스)      Linear ledger로 dedup   (cmux 라이브 탭)
+        ▲                                                              │
+        └──────────  watchdog·reaper·supervisor 자가복구  ◀────────────┘
+```
+
+- **여러 loop** — 엔진은 하나, mission만 다르게 여러 도메인을 동시에.
+- **AI 빌더** — "웹뷰 리팩토링 루프 만들어줘" 한 줄 → Claude가 mission·Linear 프로젝트·config 자동 구성.
+- **대시보드**(localhost) — loop·이슈·세션·스케줄·🔴개입필요를 한눈에, mission/config 편집, 생성·삭제.
+- **폰에서 전부** — Telegram 봇(자연어 제어) + Tailscale 원격 대시보드(PWA·웹푸시).
+- **자가복구** — 멈춘 worker·죽은 엔진을 ≤60초에 결정론적으로 되살린다.
+- **의존성 0** — `zsh` + Node 빌트인. 빌드·테스트·`npm install` 없음(대시보드 UI의 Oat CSS 1개만 vendored).
+
+---
 
 ## 전제
-macOS. `./install.sh`가 아래 도구를 점검하고 누락 시 brew 설치를 제안한다(`loopctl doctor`로 언제든 재점검).
+
+**macOS**. `./install.sh`가 아래 도구를 점검하고, 없으면 brew 설치를 제안한다(`loopctl doctor`로 언제든 재점검).
 
 | 도구 | 용도 | 설치 |
 |---|---|---|
-| **cmux** | 워커 탭 spawn·대시보드 패널 (하드 전제) | `brew install --cask cmux` |
-| **claude** | 워커/오케스트레이터 본체 | cmux 번들 포함 / `curl -fsSL https://claude.ai/install.sh \| bash` |
+| **cmux** | worker 탭 spawn·대시보드 패널 (하드 전제) | `brew install --cask cmux` |
+| **claude** | worker·orchestrator 본체 | cmux 번들 포함 / `curl -fsSL https://claude.ai/install.sh \| bash` |
 | **gh** | PR 조회·생성 | `brew install gh` |
 | **node** | 대시보드·프롬프트 렌더 | `brew install node` |
 | **git** | worktree | `xcode-select --install` |
 
-작업 대상 repo는 git worktree를 쓰므로 git repo여야 함. cmux 없는 환경은 미지원.
+작업 대상 repo는 git worktree를 쓰므로 git repo여야 한다. **cmux 없는 환경은 미지원** — 디스패처·대시보드는 cmux 패널에서 돌고, worker는 cmux 탭으로 뜬다.
 
-## 설치 / 온보딩
+## 설치
+
 ```sh
-git clone <this-repo> ~/LTH/loops      # 위치 자유
-cd ~/LTH/loops
-./install.sh                            # 전제도구 점검·설치 제안 → loops.env, 스킬 등록, loopctl 전역 등록
-loopctl help                            # 무엇을 할 수 있는지
-loopctl doctor                          # 설치·설정·런타임 점검
-loopctl dashboard                       # 대시보드 (cmux 패널)
-loopctl start                           # 디스패처
+git clone <this-repo> ~/loops      # 위치 자유
+cd ~/loops
+./install.sh                       # 전제도구 점검·설치 → loops.env 생성, 스킬·loopctl 전역 등록
+loopctl doctor                     # 설치·설정·런타임 점검
+loopctl dashboard                  # 대시보드 (cmux 패널)
+loopctl start                      # 디스패처 시작
 ```
-`install.sh`는 `loopctl`을 `~/.local/bin`에 심볼릭한다 → **어느 디렉토리에서나** `loopctl …` 실행(앞에 `./` 불필요). Linear 키는 대시보드 ⚙️ 에서 입력(`loops.env`에 저장, gitignore). (선택) `loops.env`의 `DEFAULT_REPO`에 기본 repo 절대경로 지정.
 
-### 명령
-```
-런타임   loopctl dashboard | start | stop | pause | resume | status | run-now <loop> | update
-정리     loopctl worktrees <loop>           종료 이슈 잔여 worktree 진단(읽기전용)
-         loopctl cleanup <loop> [--dry]     종료(Done/Canceled) worktree·탭·브랜치 정리
-점검     loopctl doctor | help
-감독     loopctl supervisor install         프로세스 감독자(launchd, 60s) — 죽은 디스패처 자동 재기동
-         loopctl supervisor status|remove|run
-원격     loopctl bot                        Telegram 봇 — 폰으로 push 알림 + 결정·취소·재실행
-         loopctl remote [tailscale]         폰 원격제어 — 대시보드를 tailscale IP에도 바인딩(내 tailnet 전용), ⋯→'📱 폰 원격 접속'에서 QR
-         loopctl remote off | cloudflare    끄기 / 공개 quick tunnel(basic-auth)
-         loopctl dashboard remote           대시보드를 폰 원격까지 켜서 시작
-```
-종료 상태(Linear `completed`/`canceled`) 이슈의 worktree·cmux 탭·브랜치는 오케스트레이터 run마다 **자동 정리**된다(대시보드 `🧹 정리` 버튼·위 `loopctl cleanup`으로 수동도 가능). 진행 중 worktree는 `claude --resume` 위해 보존.
+`install.sh`는 `loopctl`을 `~/.local/bin`에 심볼릭한다 → **어느 디렉토리에서나** `loopctl …` 실행(앞에 `./` 불필요). Linear API 키는 대시보드 **⚙️ 설정**에서 입력하면 `loops.env`(gitignore)에 저장된다 — 백로그 발굴·정리 신호에 필요. (선택) `loops.env`의 `DEFAULT_REPO`에 기본 repo 절대경로를 넣으면 AI 빌더가 편하다.
 
-**멈춤·유령 자가복구(≤60s, 결정론적).** `dispatch.sh`가 리퍼와 함께 두 루프를 돌린다 — in-flight 기준은 **Linear `started`**(항상 신선; snapshot에 의존 안 함), worker 탭 생존은 신뢰 가능(cmux 탭은 명령 종료 시 auto-close). 죽은 worker는 worktree가 남았으면 `heal-worker`가 그 자리에서 resume, worktree 없이 Linear만 `started`인 **유령**(in-flight를 붙잡아 cap을 막아 "루프가 조용히 멈추는" 주범)은 리퍼가 `linear-move`로 Backlog에 자동 복귀시켜 슬롯을 푼다. 탭은 살아있으나 화면이 5분 이상 정지한 worker는 **wedged**로 대시보드에 표면화(자동 kill은 안 함). N회 자가복구 실패는 🧟 stuck으로 사람에게 넘긴다. **머지·배포·force-push·Linear 취소는 어느 경로에서도 없음**(Backlog 이동만).
+## 30초 개념
 
-**플랫폼 자체의 셀프힐링(엔진이 죽었을 때).** 위 자가복구는 전부 `dispatch.sh` 안에 살아서, 디스패처 자신이 죽으면 다 같이 멈춘다 — 그 단일 장애점을 세 겹이 막는다. ① **supervisor**(`loopctl supervisor install`, launchd 60s): 죽은 디스패처를 재기동(대시보드 프록시 우선)하고, 디스패처는 자기 housekeeping으로 죽은 대시보드·봇 패널을 재기동한다. `loopctl stop`/대시보드 ⏹ 같은 **의도적 정지는 마커로 존중**(재기동 안 함). ② **crash-loop 가드**: 10분 내 3회 죽으면 — 직전 self-update가 원인으로 추정될 때 이전 커밋으로 **로컬 롤백**(force-push 아님)하고 그 커밋을 보류, 아니면 30분 백오프 + Telegram 알림. ③ **incident-bridge**: 오케스트레이터 사이클 연속 실패·supervisor escalate/롤백을 **엔진 자가개선 루프(loops-improve)의 Backlog 이슈로 자동 발제** → 워커가 고쳐서 main에 push → self-update → 디스패처 자가 재실행, 즉 "고장 → 자가 수정 → 자가 배포"가 닫힌다(핵심 실행경로 변경은 여전히 human-gate, 일 3건 캡·dedup). 알림은 봇 프로세스를 거치지 않는 Telegram 직송(봇도 감시 대상이므로).
-
-### 폰에서 다 돌리기 — Telegram 봇
-컴퓨터 앞에 없어도 폰 하나로 **전부** 된다 — 활성 loop·진행 중 작업을 보고, 사람 판단(human-gate)·PR 준비·CI 실패 push를 받고, 그 자리에서 결정·취소·정리·재실행·디스패처 제어까지. 엔진은 그대로(봇은 대시보드 `/api/status`·`/api/control`만 호출 — **머지/배포/force-push는 여전히 안 함, 머지는 사람**).
-
-**셋업** (둘 중 하나):
-- 대시보드 ⚙️ 설정 → `🤖 Telegram 원격 봇`에 BotFather 토큰 저장 → `▶ 봇 시작`
-- 또는 CLI: `loops.env`에 `TELEGRAM_BOT_TOKEN=<토큰>` → `loopctl dashboard` 뜬 상태에서 `loopctl bot`
-
-그다음 새 봇에게 **아무 메시지** → chat-id 자동 페어링(이후 그 대화로만 알림·명령이 오간다).
-
-**쓰는 법 — 그냥 말로.** "지금 뭐 돌아가?", "myapp 한번 돌려", "GOD-8 그냥 진행해", "그거 취소해" 처럼 자연어로 보내면 봇이 `claude`(빠른 모델)로 의도를 파악해 실행한다(현재 상태를 컨텍스트로 줘서 loop/issue id를 알아서 고름). 파괴적 작업(취소·정리)은 바로 실행하지 않고 **확인 버튼**으로 되묻는다.
-
-탭이 편하면 **`/menu`** — 디스패처(시작/정지/일시정지/잠자기방지) → 루프(⚡실행/🧹PR정리/⏸정지/🔀on-off/📋작업) → 작업(✅진행/🗑취소/🧹정리/🔗PR). 🔴 게이트 알림엔 **답장으로 결정**을 적어도 된다. 슬래시도 있음: `/status` `/gates` `/resolve <ISSUE> <결정>` `/cancel` `/runnow <loop>` `/dispatcher start|stop` `/awake on|off` … (`/help`). 인증은 페어링된 chat-id 잠금. (자연어는 메시지마다 `claude` 1회 호출 — 몇 초 지연·토큰 비용; 모델은 `loops.env`의 `LOOPS_BOT_AGENT_MODEL`로 변경)
-
-### 폰에서 대시보드 통째로 — Tailscale 원격 + 웹푸시 (PWA)
-봇이 아니라 **대시보드 UI 그대로**를 폰에서 쓰고 싶으면(같은 tailnet). `loopctl remote`(또는 대시보드 ⋯ → `📱 폰 원격 접속` → `▶ 원격 켜기`, 또는 처음부터 `loopctl dashboard remote`)를 켜면 서버가 `tailscale cert`로 이 노드의 **tailnet 정식 인증서**를 받아 tailscale IP에 **HTTPS 리스너**를 연다(`127.0.0.1` 로컬은 그대로). 모달의 **QR을 폰으로 스캔** → 열리면 **공유 → 홈 화면에 추가**로 앱처럼 설치. 대시보드는 **모바일 반응형**(사이드바가 드로어로, 카드/모달 풀스크린, 안전영역 대응)이라 폰에서 전부 조작된다.
-- **웹푸시 알림**: 홈화면 앱에서 `🔔 알림 켜기` → 루프가 사람을 기다리면(🔴 human-gate·rework-exhausted·CI 실패 등) **앱이 꺼져 있어도 폰이 울린다**. 알림을 탭하면 해당 루프로 딥링크. VAPID/암호화(RFC 8291/8292)는 `bin/webpush.mjs`에 **의존성 0**로 직접 구현(‘web-push’ npm 미사용) — VAPID 키·구독은 `state/push.json`(gitignore). *iOS는 HTTPS + 홈화면 설치 PWA에서만 푸시가 되므로 위 HTTPS 원격이 전제다.*
-- **범위**: `0.0.0.0`가 아니라 tailscale IP에만 바인딩 → **LAN·공개 인터넷엔 노출 안 됨**, 내 tailnet 기기에서만. 전송은 TLS + WireGuard. 사용자의 기존 `tailscale serve` 설정은 **건드리지 않는다**(cert만 발급).
-- **영속**: `loops.env`의 `LOOPS_REMOTE=1`(모달·CLI가 토글) → 다음 부팅에도 자동으로 켜짐. 끄기 `loopctl remote off`.
-- **비밀번호(선택)**: tailnet 자체가 사설 경계라 보통 불필요하지만, `loops.env`에 `LOOPS_REMOTE_AUTH="user:pass"`를 두면 비-loopback(원격) 요청에 Basic auth를 건다(대시보드 재시작 후 적용).
-- 공개 인터넷 노출이 필요하면(tailnet 밖) `loopctl remote cloudflare` — quick tunnel + basic-auth(`cloudflared` 필요).
+- **loop** = 하나의 도메인을 맡는 자율 에이전트. `loops/<id>/`에 `mission.md` + `config.json`이 전부.
+- **orchestrator** = loop의 두뇌. 스케줄마다 헤드리스로 떠서 Linear에서 할 일을 발굴하고 worker를 뿌린다.
+- **worker** = 실행자. 이슈 1건을 cmux 라이브 탭에서 구현 → `/gbase:go`(polish + PR) → PR이 머지·종료될 때까지 `/gbase:monitor`로 상주하며 CI 실패·리뷰 코멘트를 반영한다. **머지·approve·force-push는 안 한다.**
+- **Linear 프로젝트 = 상태 기계.** 모든 run 간 연속성은 메모리가 아니라 Linear ledger에 산다: `Backlog → In Progress → In Review → Done/Canceled`. 그래서 매 run이 빈 컨텍스트에서 시작해도 중복 없이 이어진다.
+- **human-gate** = 사람 판단이 필요한 이슈. worker가 구현하지 않고 대시보드에 🔴로 올라온다. 결정은 `state/decisions/<이슈>.md`에 기록돼 다음 worker에게 권위 있는 지시로 주입된다.
 
 ## loop 만들기
-- **AI**: 대시보드 `+ 새 loop` → 한 줄 설명 → `Claude로 생성`. (또는 Claude Code 세션에서 "X 루프 만들어줘" — `create-loop` 스킬)
-- **수동/예시**: `examples/<...>` 를 `loops/<id>/` 로 복사 후 `config.json`(아래 [config.json 필드](#configjson-필드) 표 참고)·`mission.md` 수정.
-- 생성된 loop은 `enabled:false` — 대시보드에서 mission 검토 후 `켜기`.
 
-### config.json 필드
-예제(`examples/<...>/config.json`)를 복사해 수동으로 loop을 만들 때 쓰는 필드. 엔진은 `bin/render-prompt.mjs`(프롬프트 치환)·`bin/dispatch.sh`(스케줄)·`bin/spawn-worker.sh`(worktree)가 읽는다.
+1. **AI 빌더 (권장)** — 대시보드 `+ 새 loop` → 한 줄 설명 → `Claude로 생성`. (또는 Claude Code 세션에서 "X 루프 만들어줘" — `create-loop` 스킬.) mission·Linear 프로젝트·config를 자동 생성한다.
+2. **수동** — `examples/<...>/`를 `loops/<id>/`로 복사하고 `config.json`·`mission.md`를 채운다.
 
-| 필드 | 의미 | 예시값 | 필수 |
-|---|---|---|---|
-| `id` | loop 식별자. `loops/<id>/` 디렉터리명과 일치해야 함. | `"deadcode"` | 필수 |
-| `name` | 대시보드에 표시되는 이름. | `"Dead Code"` | 선택(기본 `id`) |
-| `emoji` | 대시보드 표시 이모지. | `"🧹"` | 선택(기본 `🔁`) |
-| `repo` | 작업 대상 repo의 **절대경로**. git repo여야 함. | `"/Users/me/proj"` | 필수 |
-| `baseRef` | worktree·PR diff의 기준 ref. | `"origin/develop"` | 선택(기본 `origin/develop`) |
-| `prBase` | PR을 머지할 대상 브랜치. | `"develop"` | 선택(기본 `develop`) |
-| `claudeCmd` | orchestrator·worker가 쓰는 claude 실행 커맨드. 비우면 기본 `claude`. headless 인자는 엔진이 항상 덧붙임. 래퍼 커맨드도 가능(예: `claude-acct cloop` — 멀티계정 라운드로빈+리밋 핸드오프, dotfiles 제공) — 단 stdout을 오염시키지 말 것(headless 호출자는 `--output-format json`의 JSON 정확히 1개를 기대). 대시보드 ⚙️ 설정에서도 편집 가능. | `"claude"` / `"claude-acct cloop"` | 선택(기본 `claude`) |
-| `delivery` | worker 배포 방식. `"pr"`=PR만 열고 머지는 사람(기본). `"direct"`=PR 없이 `prBase`에 직접 push 후 이슈를 바로 Done(개인/리뷰어 없는 repo용). **두 모드 모두 force-push 금지.** | `"pr"` / `"direct"` | 선택(기본 `"pr"`) |
-| `branchPrefix` | worker 브랜치 이름 접두사. | `"loop-deadcode"` | 선택(기본 `loop-<id>`) |
-| `orchestratorWorktree` | orchestrator가 도는 worktree 절대경로. | `"/Users/me/wt/loop-deadcode"` | 필수 |
-| `worktreePrefix` | worker worktree 경로 접두사(이슈별 `-<slug>` 가 붙음). | `"/Users/me/wt/loop-deadcode"` | 필수 |
-| `linearProjectId` | 작업 ledger로 쓰는 Linear 프로젝트 ID. | `"5d88…"` | 필수 |
-| `linearProjectUrl` | 대시보드에서 여는 Linear 프로젝트 URL. | `"https://linear.app/…"` | 선택 |
-| `linearLabel` | **하나의 Linear 프로젝트를 라벨로 나눠 여러 루프가 공유**할 때, 이 루프가 담당할 라벨. 지정 시 조회·발굴·fan-out·정리가 전부 이 라벨 이슈로 스코프되고, orchestrator가 새로 만드는 이슈에도 이 라벨을 붙인다. 비우면 프로젝트 전체 담당(기존 단독-프로젝트 동작). 예: 같은 프로젝트에서 `"Feature"`=PM 루프, `"Bug"`=버그 루프. | `"Bug"` | 선택(기본 없음=전체) |
-| `maxWorkers` | 동시에 도는 worker 수 상한(capacity cap). | `2` | 선택(기본 `2`) |
-| `backlogTarget` | 백로그 이슈 수가 **이 값 미만일 때만** orchestrator가 백로그를 보충. | `5` | 선택(기본 `5`) |
-| `schedule.intervalSec` | orchestrator 발사 주기(초). 최소 60. | `10800` (3시간) | 선택(기본 `3600`) |
-| `schedule.startAt` | 최초 발사 시각 `"HH:MM"`. `null`이면 즉시부터 주기 시작. | `null` / `"09:00"` | 선택(기본 `null`) |
-| `enabled` | `false`면 스케줄 발사 안 함. 신규 loop은 `false`로 시작. | `false` | 선택(기본 `true`) |
-| `verify` | `true`면 worker가 PR을 연 직후 **별도 fresh-context 검증자**(maker/checker 분리)가 이슈 수용 기준으로 PR을 채점해 verdict(✅/⚠️/❌)를 PR·Linear에 코멘트. ❌면 재작업 자동 트리거. 검증자는 Edit/Write가 구조적으로 차단됨(코드 못 고침). pr 모드 전용. | `true` | 선택(기본 `false`) |
-| `validate` | `true`면 매 사이클 후 **미판정 human-gate 제안 이슈**마다 별도 fresh-context **제안 검증자**(🧪 validator)가 근거를 실물 재현·심문(수요 진단·전제 도전·축소안 1개)해 판정(🟢 strengthen/🟡 narrow/🔴 reject)을 Linear 코멘트 + 게이트 UI(대시보드·Telegram)에 병기. 제안형(PM) 루프용 — 승인/기각은 여전히 사람. Edit/Write 구조 차단. `vision.md`가 있으면 정렬 기준으로 주입. | `true` | 선택(기본 `false`) |
-| `budget.dailyUsd` | 일일 비용 소프트 캡(USD). 오늘 `costs.jsonl` 합계가 캡 이상이면 dispatcher가 **다음 사이클만 skip**(진행 중 worker는 안 죽임), 자정 리셋 후 자동 재개. 측정 범위=headless 사이클(오케스트레이터·retro·검증자·validator). | `5` | 선택(기본 없음=무제한) |
-| `on.ciFailure` | `true`면 `prBase` 브랜치에 **새 CI 실패** 등장 시 interval을 기다리지 않고 즉시 사이클 발사. | `true` | 선택(기본 `false`) |
-| `on.prReview` | `true`면 이 루프의 열린 PR에 **새 사람 리뷰** 제출 시 즉시 사이클 발사(리뷰 반영 지연 단축). | `true` | 선택(기본 `false`) |
-| `on.linearNew` | `true`면 Linear 프로젝트에 **새 Backlog 이슈** 등장 시 즉시 사이클 발사(Linear에서 이슈만 만들면 곧 착수). `linearLabel` 있으면 그 라벨의 신규 이슈만. | `true` | 선택(기본 `false`) |
-| `drain` | **"쌓이면 계속 처리, 비면 조용" 모드.** 지정 시 스케줄 발사가 값싼 Linear 체크로 게이트된다 — **드레인 가능** backlog(라벨 스코프 · run-log/human-gate 이슈 제외)>0 & in-flight<cap **또는** 발굴 주기(`drain.discoverySec`, 기본 600초) 도래일 때만 LLM 사이클을 태우고, 아니면 스킵(idle 토큰비용 0). `intervalSec`을 짧게(예 120) + `on.linearNew:true`와 함께 쓰면 새 이슈는 즉시 착수하고 빈 슬롯은 곧 재충전되며, 할 일 없을 땐 발굴 주기로만 폴링. 발굴을 MCP로 하는 버그 루프처럼 "빠르게 반응하되 idle 비용은 없게"에 적합. | `true` / `{ "discoverySec": 600 }` | 선택(기본 없음=매 interval 발사) |
-| `retro.everyCycles` | 정규 사이클 N개마다 **retro 분석 run**(LOOP_MODE=retro)을 자동 발사해 `state/learnings.md`(교훈)를 갱신 — 머지/거절/리뷰/human-gate 판례에서 패턴을 추출해 다음 run 프롬프트에 주입. 0/미설정=비활성. | `20` | 선택(기본 없음=비활성) |
-| `product` | 이 루프가 속한 **제품**(`products/<id>/product.json`) 링크. 지정 시 `repo`·`baseRef`·`prBase`·`claudeCmd`·`linearProjectId`·`linearProjectUrl`을 제품에서 상속(루프 값이 항상 우선, 이 화이트리스트만). 아래 [제품 계층](#제품product-계층) 참고. | `"myapp"` | 선택 |
+생성된 loop은 항상 **`enabled:false`** 로 시작한다 — 대시보드에서 mission을 검토하고 `켜기`. `examples/`에 `deadcode`(정리형)·`seo`(감사형)·`bug-drain`(드레인형) 시작 템플릿이 있다.
 
-### 제품(product) 계층
-**제품 1개 = Linear 프로젝트 1개 = 루프 여러 개**(예: PM 루프 + 버그 루프)로 관리할 때 쓰는 상위 단위. `products/<id>/product.json`(gitignored)에 제품 공통 설정을 두고, 각 루프는 `"product": "<id>"`로 연결해 공통 필드를 상속받는다(루프별 설정 — 스케줄·cap·라벨·worktree — 은 루프 config에 남는다).
+### `config.json` — 필수 필드
 
-```jsonc
-// products/myapp/product.json
-{
-  "id": "myapp", "name": "Petstagram (솜이랑)",
-  "linearProjectId": "…", "linearProjectUrl": "…",           // 공유 ledger (= 이 제품)
-  "repo": "/Users/me/myapp", "baseRef": "origin/main", "prBase": "main",
-  "claudeCmd": "claude-acct c2",                              // MCP 붙은 계정 (루프가 오버라이드 가능)
-  "triage": {                                                 // 상위 분류기 (선택)
-    "routes": { "Bug": "결함 — 코드 수정으로 고침", "Feature": "새 기능·개선 — PM 검토 대상" },
-    "model": "haiku", "maxPerPass": 5
-  }
-}
+| 필드 | 의미 | 예시 |
+|---|---|---|
+| `id` | loop 식별자. `loops/<id>/` 디렉터리명과 일치. | `"deadcode"` |
+| `repo` | 작업 대상 repo **절대경로** (git repo). | `"/path/to/app"` |
+| `orchestratorWorktree` | orchestrator가 도는 worktree 절대경로. | `"/path/to/wt/loop-deadcode"` |
+| `worktreePrefix` | worker worktree 경로 접두사(이슈별 `-<slug>` 부착). | `"/path/to/wt/loop-deadcode"` |
+| `linearProjectId` | 작업 ledger로 쓰는 Linear 프로젝트 ID. | `"5d88…"` |
+
+### `config.json` — 선택 필드
+
+<details>
+<summary><b>기본 동작</b> — 이름·스케줄·동시성·배포 방식</summary>
+
+| 필드 | 의미 | 기본 |
+|---|---|---|
+| `name` / `emoji` | 대시보드 표시명·이모지. | `id` / `🔁` |
+| `baseRef` / `prBase` | worktree·PR diff 기준 ref / 머지 대상 브랜치. | `origin/develop` / `develop` |
+| `branchPrefix` | worker 브랜치 접두사. | `loop-<id>` |
+| `linearProjectUrl` | 대시보드에서 여는 Linear URL. | 없음 |
+| `maxWorkers` | 동시 worker 수 상한(capacity cap). | `2` |
+| `backlogTarget` | 백로그가 이 값 **미만일 때만** 보충 발굴. | `5` |
+| `schedule.intervalSec` | orchestrator 발사 주기(초, 최소 60). | `3600` |
+| `schedule.startAt` | 최초 발사 시각 `"HH:MM"`. `null`=즉시. | `null` |
+| `enabled` | `false`면 발사 안 함. 신규 loop은 `false`. | `true` |
+| `claudeCmd` | claude 실행 커맨드(래퍼 허용, 아래 주). 헤드리스 인자는 엔진이 붙임. | `claude` |
+| `delivery` | `"pr"`=PR만 열고 머지는 사람. `"direct"`=PR 없이 `prBase`에 직접 push 후 Done(리뷰어 없는 개인 repo용). **둘 다 force-push 금지.** | `"pr"` |
+
+</details>
+
+<details>
+<summary><b>피드백 레이어</b> — 검증·심문·학습·비용 (전부 opt-in)</summary>
+
+| 필드 | 의미 | 기본 |
+|---|---|---|
+| `verify` | PR 직후 **별도 fresh-context 검증자**(maker/checker 분리)가 수용 기준으로 채점 → verdict(✅/⚠️/❌)를 PR·Linear에 코멘트, ❌면 재작업 자동 트리거. 검증자는 Edit/Write가 **구조적으로 차단**됨(코드 못 고침). pr 모드 전용. | `false` |
+| `validate` | 매 사이클 후 미판정 human-gate 제안마다 **제안 검증자**(🧪)가 근거를 실물 재현·심문(수요 진단·전제 도전·축소안 제시)해 판정(🟢/🟡/🔴)을 게이트 UI에 병기. 제안형(PM) 루프용 — 승인·기각은 여전히 사람. | `false` |
+| `retro.everyCycles` | N 사이클마다 **retro run**이 머지·거절·리뷰·게이트 판례에서 교훈을 뽑아 `state/learnings.md` 갱신 → 다음 프롬프트에 주입. `mission.md`는 절대 안 건드림. | 없음 |
+| `budget.dailyUsd` | 일일 비용 소프트 캡(USD). 오늘 헤드리스 사이클 합계가 캡 이상이면 다음 사이클만 skip(진행 중 worker는 유지), 자정 리셋. | 없음 |
+
+</details>
+
+<details>
+<summary><b>반응성 & 스케일</b> — 이벤트 트리거·드레인·라벨·제품</summary>
+
+| 필드 | 의미 | 기본 |
+|---|---|---|
+| `on.ciFailure` | `prBase`에 **새 CI 실패** 등장 시 interval 무시하고 즉시 발사. | `false` |
+| `on.prReview` | 열린 PR에 **새 사람 리뷰** 제출 시 즉시 발사. | `false` |
+| `on.linearNew` | Linear에 **새 Backlog 이슈** 등장 시 즉시 발사. | `false` |
+| `drain` | **"쌓이면 계속, 비면 조용" 모드.** 발사가 값싼 Linear 체크로 게이트됨 — 드레인 가능 backlog>0 & in-flight<cap **또는** 발굴 주기(`drain.discoverySec`, 기본 600s) 도래일 때만 LLM 사이클, 아니면 스킵(idle 토큰비용 0). `intervalSec`을 짧게 + `on.linearNew`와 함께 쓰면 "빠르게 반응하되 idle 비용 0". | 없음 |
+| `linearLabel` | **하나의 Linear 프로젝트를 라벨로 나눠 여러 루프가 공유**. 지정 시 조회·발굴·fan-out·정리가 이 라벨로 스코프되고 새 이슈에도 부착. 예: `"Feature"`=PM 루프, `"Bug"`=버그 루프. | 없음=전체 |
+| `product` | 이 루프가 속한 **제품**(`products/<id>/product.json`) 링크 — `repo`·`baseRef`·`prBase`·`claudeCmd`·`linearProjectId`를 상속(루프 값 우선). [제품 계층](#제품-계층) 참고. | 없음 |
+
+</details>
+
+> **`claudeCmd` 래퍼 계약**: `claude` 자리에 래퍼를 넣을 수 있다(예: 멀티계정 라운드로빈 + 리밋 핸드오프 래퍼). 단 stdout을 오염시키면 안 된다 — 헤드리스 호출자는 `--output-format json`의 JSON을 정확히 1개 기대한다. 값을 소비하는 새 플래그를 엔진 claude 호출부에 추가하면 래퍼의 인자 파서도 맞춰야 한다.
+
+### 제품 계층
+
+**제품 1개 = Linear 프로젝트 1개 = 루프 여러 개**(예: PM 루프 + 버그 루프)로 묶는 상위 단위. `products/<id>/product.json`(gitignore)에 공통 설정을 두고 각 루프가 `"product": "<id>"`로 상속한다.
+
+- **파티션** — 각 루프가 `linearLabel`로 프로젝트를 나눈다.
+- **triage(상위 분류기)** — 사람이 라벨 없이 그냥 쌓은 이슈를 dispatcher가 ≤60s에 감지, 값싼 헤드리스 분류로 라벨을 붙인다(LLM은 라벨 *선택*만, 부착·거부는 결정론 스크립트). 붙는 순간 해당 라벨 루프의 `on.linearNew`가 잡아 즉시 착수 — "이슈만 쌓으면 알아서 분류돼 처리". 이슈당 3회 실패 시 "라벨 직접 지정" 코멘트 후 포기.
+
+## 폰에서 전부
+
+### Telegram 봇 — 자연어 원격 제어
+
+컴퓨터 앞에 없어도 폰 하나로 활성 loop·진행 작업을 보고, human-gate·PR·CI 실패 push를 받고, 그 자리에서 결정·취소·재실행까지 된다.
+
+**셋업**: 대시보드 ⚙️ → `🤖 Telegram 봇`에 [@BotFather](https://t.me/BotFather) 토큰 저장 → `▶ 봇 시작` (또는 `loops.env`에 `TELEGRAM_BOT_TOKEN=` 후 `loopctl bot`). 그다음 봇에게 **아무 메시지** → chat-id 자동 페어링.
+
+**쓰는 법**: 그냥 말로. *"지금 뭐 돌아가?"*, *"myapp 한번 돌려"*, *"CI 왜 깨져? 원인 보고 고칠 태스크 만들어"* — 봇이 `claude` 헤드리스 에이전트로 의도를 파악해 여러 스텝을 밟는다. 에이전트의 도구는 Loops 제어 MCP뿐이라(`--disallowedTools`로 Bash/Edit/Write 차단) **구조적으로 merge·deploy·force-push가 불가능**하다. 파괴적 작업(취소·정리)은 봇이 직접 하지 않고 **확인 버튼**으로 되묻는다. 탭 UI(`/menu`)와 슬래시(`/status` `/gates` `/resolve` `/runnow` …)도 있다.
+
+### Tailscale 원격 대시보드 + 웹푸시 (PWA)
+
+봇이 아니라 **대시보드 UI 그대로**를 폰에서 쓰고 싶으면(같은 tailnet). `loopctl remote`(또는 대시보드 ⋯ → `📱 폰 원격 접속`)를 켜면 서버가 `tailscale cert`로 이 노드의 tailnet 정식 인증서를 받아 tailscale IP에 **HTTPS 리스너**를 연다. 모달의 QR을 폰으로 스캔 → **공유 → 홈 화면에 추가**로 앱처럼 설치. 대시보드는 모바일 반응형이라 폰에서 전부 조작된다.
+
+- **웹푸시** — 홈화면 앱에서 `🔔 알림 켜기` → 루프가 사람을 기다리면(🔴 human-gate·rework-exhausted·CI 실패 등) **앱이 꺼져 있어도 폰이 울린다**. 탭하면 해당 루프로 딥링크. VAPID/암호화(RFC 8291/8292)는 `bin/webpush.mjs`에 **의존성 0**로 직접 구현.
+- **범위** — `0.0.0.0`이 아니라 tailscale IP에만 바인딩 → **LAN·공개 인터넷 노출 없음**, 내 tailnet 기기에서만(TLS + WireGuard). 기존 `tailscale serve` 설정은 안 건드린다.
+- **영속** — `loops.env`의 `LOOPS_REMOTE=1`(모달·CLI가 토글) → 다음 부팅에도 자동. 끄기 `loopctl remote off`.
+- **비밀번호(선택)** — tailnet 자체가 사설 경계라 보통 불필요하지만, `LOOPS_REMOTE_AUTH="user:pass"`를 두면 비-loopback 요청에 Basic auth를 건다.
+- **공개 터널** — tailnet 밖 노출이 필요하면 `loopctl remote cloudflare`(quick tunnel + basic-auth, `cloudflared` 필요).
+
+## 신뢰성 — 자가복구
+
+Loops는 사람이 안 보는 동안에도 계속 돌도록 설계됐다. 모든 복구는 **결정론적 shell**이고, 어디서도 merge·deploy·force-push하지 않는다(Backlog 이동·로컬 롤백만).
+
+**멈춤·유령 자가복구 (≤60s).** `dispatch.sh`가 리퍼와 함께 두 루프를 돈다. in-flight 판정 기준은 항상 신선한 **Linear `started`**(stale snapshot에 의존 안 함).
+- 죽었지만 worktree가 남은 worker → `heal-worker`가 그 자리에서 `claude --resume`.
+- worktree 없이 Linear만 `started`인 **유령**(슬롯을 영구 점유해 "루프가 조용히 멈추는" 주범) → 리퍼가 Backlog로 되돌려 슬롯을 푼다.
+- 탭은 살아있으나 화면이 5분+ 정지한 worker → **wedged**로 대시보드에 표면화(자동 kill은 안 함 — 느린 정상 worker 보호).
+- N회 자가복구 실패 → 🧟 stuck으로 사람에게.
+
+**엔진 자체의 셀프힐링.** 위 복구는 전부 `dispatch.sh` 안에 살아서 디스패처가 죽으면 다 멈춘다 — 그 단일 장애점을 세 겹이 막는다.
+1. **supervisor** (`loopctl supervisor install`, launchd 60s) — 죽은 디스패처를 재기동하고, 디스패처는 자기 housekeeping으로 죽은 대시보드·봇을 재기동. `loopctl stop` 같은 **의도적 정지는 마커로 존중**.
+2. **crash-loop 가드** — 10분 내 3회 죽으면, 직전 self-update가 원인으로 추정될 때 이전 커밋으로 **로컬 롤백**(force-push 아님), 아니면 30분 백오프 + 알림.
+3. **incident-bridge** — 오케스트레이터 연속 실패·supervisor escalate/롤백을 **엔진 자가개선 루프의 Backlog 이슈**로 자동 발제 → worker가 고쳐 push → self-update → 디스패처 자가 재실행. "고장 → 자가 수정 → 자가 배포"가 닫힌다(핵심 실행경로 변경은 여전히 human-gate).
+
+## CLI — `loopctl`
+
+```
+런타임   dashboard [remote]   대시보드 (http://localhost:8422, cmux 패널). remote → 폰 원격도 켬
+         start | stop         전역 디스패처 시작 / 중지
+         pause | resume       전역 일시정지 / 재개
+         status               디스패처·루프 상태
+         run-now <loop>       루프 1사이클 즉시 발사
+         update               엔진을 origin 최신으로 갱신 (ff-only; 디스패처가 idle마다 자동으로도)
+
+정리     worktrees <loop>         종료 이슈 잔여 worktree 진단 (읽기전용)
+         cleanup <loop> [--dry]   종료(Done/Canceled) worktree·탭·브랜치 정리
+
+점검     doctor                   전제도구·설정·런타임 헬스체크
+         supervisor install|remove|status|run   프로세스 감독자(launchd) 등록
+
+원격     bot                      Telegram 봇 (폰 push + 결정·취소·재실행)
+         remote [tailscale|off|cloudflare]   폰 원격 대시보드 토글
 ```
 
-- **파티션**: 각 루프가 `linearLabel`로 프로젝트를 나눈다 — 예: `"Feature"`=PM 루프, `"Bug"`=버그 루프(drain).
-- **triage(상위 분류기)**: 사람이 **라벨 없이 그냥 쌓은** 이슈를 dispatcher가 ≤60s 내 감지, 값싼 headless 분류(LLM은 라벨 *선택*만 — Linear 부착·코멘트는 결정론 스크립트 `bin/linear-label.mjs`, routes에 없는 라벨은 거부)로 라벨을 붙인다. 붙는 순간 그 라벨 루프의 `on.linearNew`가 잡아 **즉시 사이클** — "이슈만 쌓으면 알아서 분류돼 처리"가 이 경로다. 이슈당 3회 실패 시 "라벨 직접 지정" 코멘트를 남기고 포기(무한 재시도 없음). dedup은 Linear 자신(라벨 부재=미분류)이라 사이드 스테이트 최소(`products/<id>/state/triage.json`은 attempts만).
-- 기존 이슈가 있는 프로젝트를 나눌 땐 **먼저 이슈에 라벨을 붙이고**(1회 마이그레이션) 라벨 필터를 켠다.
+종료 상태 이슈의 worktree·탭·브랜치는 매 orchestrator run마다 **자동 정리**된다(진행 중 worktree는 `claude --resume` 위해 보존).
 
 ## 구조
+
 ```
-bin/        엔진(공통):
-            · 코어 파이프라인: dispatch·run-once·spawn-orchestrator·spawn-worker·worker-run·render-prompt (·_common 공통 source·preflight)
-            · 프롬프트 템플릿: orchestrator-base.md·worker-base.md·verifier-base.md·validator-base.md·retro-base.md (← {{MISSION}}·{{VISION}}·{{LEARNINGS}}·config 치환) · loop-builder.md
-            · 피드백 루프: rework-worker(리뷰/verdict 재작업 스폰) · spawn-verifier+verifier-run(maker/checker 검증) · spawn-validator+validator-run(제안 심문 → 게이트 병기) · event-poll(CI실패·리뷰·Linear신규 이벤트 트리거) · record-cost(사이클 비용 캡처)
-            · 신뢰성/정리(결정론적): watchdog(spawn-liveness)·heal-worker·cleanup-terminal(reaper)·cleanup-issue·cleanup-loop
-            · Linear ledger·빌드: linear-move·linear-states · build-loop
-            · notify-bot.mjs  Telegram 원격 브리지 (loopctl bot) · loops-mcp.mjs  봇 에이전트용 제어 MCP 서버(안전 면만)
-dashboard-server.mjs / dashboard.html / loopctl
-vendor/     Oat UI 정적 자산 oat.min.{css,js} (유일한 no-build 예외 · 핀 고정)
-skills/create-loop/   create-loop 스킬 (install.sh가 ~/.claude/skills 로 symlink)
-examples/   시작 템플릿 (placeholder)
-loops/      (gitignore) 유저 loop 데이터: <id>/{config.json, mission.md, state/}
-state/      (gitignore) 런타임
-loops.env   (gitignore) 머신별 도구 경로 (install.sh 생성)
+bin/          엔진(공통, 도메인 무관):
+              · 코어 파이프라인   dispatch · run-once · spawn-orchestrator · spawn-worker · worker-run · render-prompt · _common(공통 source) · preflight
+              · 프롬프트 템플릿   {orchestrator,worker,verifier,validator,retro}-base.md · loop-builder.md
+              · 피드백 루프       rework-worker · spawn-verifier(+verifier-run) · spawn-validator(+validator-run) · event-poll · record-cost
+              · 신뢰성/정리       watchdog · heal-worker · cleanup-terminal(reaper) · cleanup-issue · cleanup-loop · supervisor · incident-bridge
+              · Linear ledger    linear-move · linear-states · linear-create · … · build-loop
+              · 원격             notify-bot(Telegram) · loops-mcp(봇 에이전트용 제어 MCP) · webpush · tg-notify
+dashboard-server.mjs · dashboard.html · loopctl
+vendor/       Oat UI 정적 자산 (유일한 no-build 예외 · 핀 고정)
+skills/create-loop/   create-loop 스킬 (install.sh가 ~/.claude/skills로 symlink)
+examples/     시작 템플릿 (deadcode · seo · bug-drain)
+docs/         설계 노트
+loops/        (gitignore) 유저 loop 데이터: <id>/{config.json, mission.md, state/}
+products/     (gitignore) 제품 계층 설정
+state/        (gitignore) 런타임
+loops.env     (gitignore) 머신별 도구 경로 (install.sh 생성)
 ```
 
-## 동작
-`dispatch.sh`(cmux 패널) 가 각 loop의 스케줄대로 `orchestrator`(headless)를 발사 → orchestrator가 Linear ledger로 dedup하며 작업을 발굴, capacity만큼 `worker`(cmux 라이브 탭) fan-out → worker가 구현 → `/gbase:go`(polish+PR) → preview 검증 → **그 세션이 `/gbase:monitor`로 머지될 때까지 상주**하며 CI 실패·리뷰 코멘트를 바로 반영(무인 규칙: 모호하면 코멘트로 사람에게 표면화, **머지·approve·force-push는 안 함**). human-gate 이슈는 사람에게 남긴다. — 단 `delivery:"direct"` 루프(config.json)는 PR 대신 `prBase`로 직접 push하고 이슈를 바로 **Done**으로 옮긴다(In Review 없음). 어느 모드든 머지·force-push는 사람 게이트·금지 원칙을 그대로 유지한다.
+경로는 `LOOPS_HOME`(스크립트 자기 위치)·`loops.env`로 전부 동적 — 어디에 clone해도, cmux/claude/gh/node가 어디 있어도 `install.sh`가 맞춰준다.
 
-> ⚠️ 경로는 `LOOPS_HOME`(스크립트 자기위치)·`loops.env`로 전부 동적. cmux/claude/gh/node가 다른 위치여도 `install.sh`가 맞춰준다. cmux 없는 환경은 미지원.
+## 안전 불변식
+
+> **엔진은 절대 merge / deploy / force-push 하지 않는다.** worker는 PR만 연다. 머지는 사람의 게이트.
+
+이 불변은 프롬프트·스크립트 어디를 고쳐도 유지된다. 봇 에이전트·검증자는 `--disallowedTools`로 Edit/Write/Bash가 **구조적으로** 차단되고(프롬프트 규율이 아니라 도구 부재), self-update 롤백조차 로컬 브랜치 이동일 뿐 origin은 안 건드린다. 유일한 예외는 `delivery:"direct"` 루프(리뷰어 없는 개인 repo)로, PR 대신 `prBase`에 직접 push하지만 **force-push는 여전히 금지**다.
+
+---
+
+*엔지니어링 내부 문서(아키텍처·규약·편집 시 주의점)는 [`CLAUDE.md`](./CLAUDE.md)를 참고.*

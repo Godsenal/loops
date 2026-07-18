@@ -17,7 +17,7 @@
   · **모든 이슈 = human-gate 제안서**. 본문 구성 강제: [문제/기회] · [근거(실물만 — dogfooding 재현 경로/경쟁사 URL/데이터 규모. 근거 없으면 발행 금지)] · [제안] · [첫 슬라이스(worker 1명이 **PR 1개**로 구현 가능한 최소 버전 + 대상 파일 — 승인되면 그대로 worker 지시가 된다)] · [성공지표] · [기각 기준]. gate ask는 "승인/축소/기각"을 사람이 30초 안에 결정 가능하게.
   · dedup에 **"Canceled(기각)된 제안과 같은 계열 재발굴 금지"** 를 명시 — 기각도 데이터다.
   · config 차이: `backlogTarget` 3~5(승인 대기 제안 백프레셔 — 쌓이면 발굴 자동 중단), `intervalSec` 길게(≥43200), `"retro": { "everyCycles": 6 }` 포함(기각 vs 승인 패턴을 learnings로 학습), `"validate": true` 포함(fresh-context 검증자가 제안 근거를 심문해 판정을 게이트에 병기).
-  · **기존 B 아키타입 mission이 있으면 반드시 읽고 구조를 따라라**: `grep -l "human-gate 제안서" $LOOPS_HOME/loops/*/mission.md` (예: pm-loop).
+  · **기존 B 아키타입 mission이 있으면 반드시 읽고 구조를 따라라**: `grep -l "human-gate 제안서" $LOOPS_HOME/loops/*/mission.md` (있으면 그 구조를 그대로 따른다).
 - **C. 버그/드레인 루프**: 요청이 "관측(Sentry/PostHog 등) 에러를 가져와 고친다" 또는 "쌓이는 이슈를 빠르게 계속 처리한다"류면 이쪽. A와 같은 자동수정이되 입력이 **관측 신호 + 사람이 넣은 버그**이고 발사가 **drain 모드**다.
   · 발굴 입력 = **연결된 error-tracking MCP를 읽기 전용**으로 조회(claudeCmd 계정에 그 MCP를 user-scope로 붙여둬야 worktree cwd에서 보인다). dedup은 이슈 본문 `fingerprint:` 마커 + Linear 검색으로. severity 분기: 명확=자동수정, 애매=human-gate.
   · config 차이: `"linearLabel": "Bug"`(공유 프로젝트를 라벨로 나눌 때 — PM 루프는 같은 프로젝트에 `"Feature"`), `"drain": { "discoverySec": 600 }` + `intervalSec` 짧게(120) + `"on": { "linearNew": true, "ciFailure": true, "prReview": true }` + `"verify": true` + `claudeCmd` 를 MCP 붙은 계정으로 핀(예 `claude-acct c2` — 라운드로빈 cloop은 MCP 없는 계정에 걸릴 수 있어 피함).
@@ -27,7 +27,7 @@
 - **요청에 `[제품 컨텍스트 — 지시]` 블록이 있으면 그 지시가 우선한다** (대시보드가 "이 제품에 새 루프"로 보낸 것): **Linear 프로젝트를 새로 만들지 마라**(5단계 건너뜀 — 제품 공유 프로젝트 사용), config에 `product`·`linearLabel`·`"on":{"linearNew":true}`를 넣고 repo·baseRef·prBase·claudeCmd·linearProjectId/Url은 넣지 마라(상속). 인터뷰에서도 repo/Linear 질문은 생략한다. 새 라벨을 정했으면 제품 product.json의 `triage.routes`에 설명과 함께 추가한다.
 
 ═══ 만들 것 (순서대로 실제 실행) ═══
-1. **환경 확인**: 먼저 `printenv LOOPS_HOME WORKTREE_BASE DEFAULT_REPO` 로 경로를 확인한다. **repo 후보**: 요청에 절대경로가 명시되면 그것 / 아니면 `$DEFAULT_REPO`(보통 모노레포 — server/admin/client가 한 repo에) / 둘 다 없으면 `$WORKTREE_BASE` 밑 git repo들. mission에서 하위 경로(예: `client/apps/webview`)로 범위를 좁혀라.
+1. **환경 확인**: 먼저 `printenv LOOPS_HOME WORKTREE_BASE DEFAULT_REPO` 로 경로를 확인한다. **repo 후보**: 요청에 절대경로가 명시되면 그것 / 아니면 `$DEFAULT_REPO`(보통 모노레포 — server/admin/client가 한 repo에) / 둘 다 없으면 `$WORKTREE_BASE` 밑 git repo들. mission에서 하위 경로(예: `packages/web/src`)로 범위를 좁혀라.
 2. **인터뷰 — AskUserQuestion 딱 1라운드(최대 4문항)**: 사용자가 고르게 한다. 요청만으로 자명한 항목은 묻지 않고, 각 문항의 첫 옵션 = 네 추천("(추천)" 표기):
    · **아키타입** A/B — 이 첫 문항에 반드시 "🤖 다 맡김 — 이후 질문 없이 알아서" 옵션 포함(고르면 남은 질문·초안 게이트 전부 생략).
    · **대상 repo/범위** — 후보 경로 제시.

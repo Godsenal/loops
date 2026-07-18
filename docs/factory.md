@@ -1,6 +1,6 @@
 # 서비스 팩토리 설계 — "좋은 서비스를 계속 만들어내는" 루프 시스템
 
-> 상태: **M1·M2 구현됨** (2026-07-11). M1 = `{{VISION}}` 토큰 + vision.md(대시보드 ⚙️ 편집·pm-loop 분리 완료). M2 = validator 3종(`bin/{spawn-validator,validator-run}.sh`+`validator-base.md`, config `"validate": true`, run-once 결정론 스폰, 대시보드 🧪 배지·게이트 병기·Telegram 병기). M3부터 미착수.
+> 상태: **M1·M2 구현됨** (2026-07-11). M1 = `{{VISION}}` 토큰 + vision.md(대시보드 ⚙️ 편집·제안형 PM 루프에서 분리 완료). M2 = validator 3종(`bin/{spawn-validator,validator-run}.sh`+`validator-base.md`, config `"validate": true`, run-once 결정론 스폰, 대시보드 🧪 배지·게이트 병기·Telegram 병기). M3부터 미착수.
 
 ## 0. 목표와 현재 갭
 
@@ -100,7 +100,7 @@
 
 ## 7. 지식층 (gbrain 이식) + 포트폴리오 수준
 
-- **`vision.md` 신설** — mission(무엇을 어떻게 찾나) *위*의 문서: 타겟 유저·북극성·non-goals·수익모델 가설. **사람 소유**(retro가 못 건드림), `{{VISION}}`으로 orchestrator·validator·retro에 주입. 지금은 이게 mission 안에 섞여 있다(pm-loop) — 분리해야 retro가 mission을 안 건드리는 불변을 유지한 채 정렬 기준을 공유한다.
+- **`vision.md` 신설** — mission(무엇을 어떻게 찾나) *위*의 문서: 타겟 유저·북극성·non-goals·수익모델 가설. **사람 소유**(retro가 못 건드림), `{{VISION}}`으로 orchestrator·validator·retro에 주입. 지금은 이게 mission 안에 섞여 있다(제안형 PM 루프) — 분리해야 retro가 mission을 안 건드리는 불변을 유지한 채 정렬 기준을 공유한다.
 - **state/ 확장** (gbrain의 레포별 지식 구조를 루프별로): `validate/` `outcomes/` `decisions-auto.jsonl` 추가. 기존 `decisions/` `learnings.md` `verify/` 유지.
 - **retro 입력 확장:** 기존(merged/closed·리뷰 코멘트·판례) + `outcomes/*`(실제 효과) + `decisions-auto.jsonl`(뒤집힌 Taste 결정). 이제 "머지됐지만 flat"인 발굴 유형을 중단시킬 수 있다.
 - **포트폴리오 retro** (서비스가 2개 이상일 때): 월 1회, 서비스 횡단 — 어느 서비스에 슬롯·예산을 더/덜 줄지, **피벗/폐기 제안**(항상 human-gate). 산출은 각 루프의 vision.md *제안 diff*(적용은 사람).
@@ -109,7 +109,7 @@
 
 | M | 내용 | 크기 | 수용 기준 |
 |---|---|---|---|
-| **M1** | `vision.md` + `{{VISION}}` 토큰 (render-prompt + 대시보드 ⚙️ 편집란) | S | pm-loop의 mission에서 제품방향을 vision.md로 분리, 렌더 확인 |
+| **M1** | `vision.md` + `{{VISION}}` 토큰 (render-prompt + 대시보드 ⚙️ 편집란) | S | 제안형 PM 루프의 mission에서 제품방향을 vision.md로 분리, 렌더 확인 |
 | **M2** | **validator** (spawn/run/base + `validate` config + gate.ask 병기) | M | PM 루프 제안 1건이 판정 코멘트를 달고 게이트에 도착 |
 | **M3** | **measure 모드** (+outcomes/, 대시보드 outcome 집계) | M | 머지된 이슈 1건이 7일 후 verdict를 받음 |
 | **M4** | retro 입력 확장 (outcomes + 뒤집힌 Taste) + 결정 3분류·6원칙 공통 블록 + `decisions-auto.jsonl` | M | learnings에 outcome 근거 교훈 1줄 이상 |
