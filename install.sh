@@ -3,6 +3,7 @@
 # usage: ./install.sh
 set -u
 LOOPS_HOME="${0:A:h}"
+REMOTE_OPT=0; [[ "${1:-}" == "remote" || "${1:-}" == "--remote" ]] && REMOTE_OPT=1   # ./install.sh remote → 폰 원격(tailscale) 켜서 설치
 echo "📦 Loops 설치 — LOOPS_HOME=$LOOPS_HOME"
 
 # --- 전제도구 점검 + 가이드 설치 (공유 preflight: 누락 시 brew 설치 y/N 제안) ---
@@ -47,6 +48,8 @@ DEFAULT_REPO="$DEF_REPO"
 LOOPS_PORT="$PORT"
 EOF
 [[ -n "$EXTRA" ]] && { print -r -- "# --- 보존된 키 (대시보드/원격 등이 기록) ---" >> "$LOOPS_HOME/loops.env"; printf '%s' "$EXTRA" >> "$LOOPS_HOME/loops.env"; }
+# remote 옵션: LOOPS_REMOTE=1 을 loops.env에 확정(코드베이스 단일 원천 env-file.mjs로 치환-또는-추가).
+(( REMOTE_OPT )) && { node --input-type=module -e 'const {setEnvVar}=await import(process.argv[1]+"/bin/env-file.mjs");setEnvVar(process.argv[1],"LOOPS_REMOTE","1")' "$LOOPS_HOME" && echo "📱 LOOPS_REMOTE=1 — 대시보드가 tailscale IP에도 바인딩(폰 원격). 폰에도 Tailscale 로그인 필요."; }
 echo "✅ loops.env 생성 (기존 LINEAR_API_KEY 등 보존)"
 
 # 스킬이 LOOPS_HOME 찾는 포인터

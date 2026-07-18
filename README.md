@@ -41,7 +41,9 @@ loopctl start                           # 디스패처
 감독     loopctl supervisor install         프로세스 감독자(launchd, 60s) — 죽은 디스패처 자동 재기동
          loopctl supervisor status|remove|run
 원격     loopctl bot                        Telegram 봇 — 폰으로 push 알림 + 결정·취소·재실행
-         loopctl remote                     Cloudflare 터널로 대시보드 외부 노출(basic-auth)
+         loopctl remote [tailscale]         폰 원격제어 — 대시보드를 tailscale IP에도 바인딩(내 tailnet 전용), ⋯→'📱 폰 원격 접속'에서 QR
+         loopctl remote off | cloudflare    끄기 / 공개 quick tunnel(basic-auth)
+         loopctl dashboard remote           대시보드를 폰 원격까지 켜서 시작
 ```
 종료 상태(Linear `completed`/`canceled`) 이슈의 worktree·cmux 탭·브랜치는 오케스트레이터 run마다 **자동 정리**된다(대시보드 `🧹 정리` 버튼·위 `loopctl cleanup`으로 수동도 가능). 진행 중 worktree는 `claude --resume` 위해 보존.
 
@@ -61,6 +63,14 @@ loopctl start                           # 디스패처
 **쓰는 법 — 그냥 말로.** "지금 뭐 돌아가?", "myapp 한번 돌려", "GOD-8 그냥 진행해", "그거 취소해" 처럼 자연어로 보내면 봇이 `claude`(빠른 모델)로 의도를 파악해 실행한다(현재 상태를 컨텍스트로 줘서 loop/issue id를 알아서 고름). 파괴적 작업(취소·정리)은 바로 실행하지 않고 **확인 버튼**으로 되묻는다.
 
 탭이 편하면 **`/menu`** — 디스패처(시작/정지/일시정지/잠자기방지) → 루프(⚡실행/🧹PR정리/⏸정지/🔀on-off/📋작업) → 작업(✅진행/🗑취소/🧹정리/🔗PR). 🔴 게이트 알림엔 **답장으로 결정**을 적어도 된다. 슬래시도 있음: `/status` `/gates` `/resolve <ISSUE> <결정>` `/cancel` `/runnow <loop>` `/dispatcher start|stop` `/awake on|off` … (`/help`). 인증은 페어링된 chat-id 잠금. (자연어는 메시지마다 `claude` 1회 호출 — 몇 초 지연·토큰 비용; 모델은 `loops.env`의 `LOOPS_BOT_AGENT_MODEL`로 변경)
+
+### 폰에서 대시보드 통째로 — Tailscale 원격 + 웹푸시 (PWA)
+봇이 아니라 **대시보드 UI 그대로**를 폰에서 쓰고 싶으면(같은 tailnet). `loopctl remote`(또는 대시보드 ⋯ → `📱 폰 원격 접속` → `▶ 원격 켜기`, 또는 처음부터 `loopctl dashboard remote`)를 켜면 서버가 `tailscale cert`로 이 노드의 **tailnet 정식 인증서**를 받아 tailscale IP에 **HTTPS 리스너**를 연다(`127.0.0.1` 로컬은 그대로). 모달의 **QR을 폰으로 스캔** → 열리면 **공유 → 홈 화면에 추가**로 앱처럼 설치. 대시보드는 **모바일 반응형**(사이드바가 드로어로, 카드/모달 풀스크린, 안전영역 대응)이라 폰에서 전부 조작된다.
+- **웹푸시 알림**: 홈화면 앱에서 `🔔 알림 켜기` → 루프가 사람을 기다리면(🔴 human-gate·rework-exhausted·CI 실패 등) **앱이 꺼져 있어도 폰이 울린다**. 알림을 탭하면 해당 루프로 딥링크. VAPID/암호화(RFC 8291/8292)는 `bin/webpush.mjs`에 **의존성 0**로 직접 구현(‘web-push’ npm 미사용) — VAPID 키·구독은 `state/push.json`(gitignore). *iOS는 HTTPS + 홈화면 설치 PWA에서만 푸시가 되므로 위 HTTPS 원격이 전제다.*
+- **범위**: `0.0.0.0`가 아니라 tailscale IP에만 바인딩 → **LAN·공개 인터넷엔 노출 안 됨**, 내 tailnet 기기에서만. 전송은 TLS + WireGuard. 사용자의 기존 `tailscale serve` 설정은 **건드리지 않는다**(cert만 발급).
+- **영속**: `loops.env`의 `LOOPS_REMOTE=1`(모달·CLI가 토글) → 다음 부팅에도 자동으로 켜짐. 끄기 `loopctl remote off`.
+- **비밀번호(선택)**: tailnet 자체가 사설 경계라 보통 불필요하지만, `loops.env`에 `LOOPS_REMOTE_AUTH="user:pass"`를 두면 비-loopback(원격) 요청에 Basic auth를 건다(대시보드 재시작 후 적용).
+- 공개 인터넷 노출이 필요하면(tailnet 밖) `loopctl remote cloudflare` — quick tunnel + basic-auth(`cloudflared` 필요).
 
 ## loop 만들기
 - **AI**: 대시보드 `+ 새 loop` → 한 줄 설명 → `Claude로 생성`. (또는 Claude Code 세션에서 "X 루프 만들어줘" — `create-loop` 스킬)

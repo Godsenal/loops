@@ -1,5 +1,9 @@
-<!doctype html><html lang="ko"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<!doctype html><html lang="ko"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
 <title>Loops</title>
+<meta name="theme-color" content="#0d131c">
+<meta name="mobile-web-app-capable" content="yes"><meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent"><meta name="apple-mobile-web-app-title" content="Loops">
+<link rel="manifest" href="/manifest.json"><link rel="apple-touch-icon" href="/icon-192.png"><link rel="icon" href="/icon-192.png">
 <link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;700&family=Space+Grotesk:wght@400;500;600;700&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="/vendor/oat.min.css">
@@ -138,7 +142,55 @@ h1{letter-spacing:-.4px;font-weight:700}
 .fld{display:flex;gap:10px;align-items:center;margin-bottom:9px}.fld label{width:130px;color:var(--muted-foreground);font-size:13px;flex-shrink:0}.fld input{width:auto;flex:1}
 /* ===== misc ===== */
 .spin{display:inline-block;animation:spin 1.4s linear infinite}@keyframes spin{to{transform:rotate(360deg)}}
+/* ===== 모바일 반응형 — 사이드바를 오프캔버스 드로어로, 상단 탑바 + 안전영역 ===== */
+#mtop,#backdrop{display:none}
+@media (max-width:820px){
+ body{height:100dvh}
+ #mtop{display:flex;align-items:center;gap:6px;position:fixed;top:0;left:0;right:0;z-index:50;
+   padding:0 10px;padding-top:env(safe-area-inset-top);height:calc(52px + env(safe-area-inset-top));
+   background:var(--panel);border-bottom:1px solid var(--border)}
+ #mtop h2{font:700 15px/1 var(--sans);margin:0;letter-spacing:.3px}
+ #mtop .sp{flex:1}
+ #mtopattn:not(:empty){color:var(--danger);font:600 12px/1 var(--mono);cursor:pointer;padding:6px 8px}
+ #hamb{font-size:17px;padding:7px 10px}
+ #side{position:fixed;top:0;left:0;bottom:0;z-index:70;width:min(86vw,320px);
+   transform:translateX(-100%);transition:transform .22s ease;box-shadow:0 0 40px rgba(0,0,0,.5);
+   padding-top:calc(14px + env(safe-area-inset-top));padding-bottom:calc(14px + env(safe-area-inset-bottom))}
+ body.nav-open #side{transform:none}
+ #backdrop{display:block;position:fixed;inset:0;z-index:60;background:rgba(0,0,0,.5);opacity:0;pointer-events:none;transition:opacity .22s}
+ body.nav-open #backdrop{opacity:1;pointer-events:auto}
+ #main{width:100%;padding:calc(66px + env(safe-area-inset-top)) 14px calc(40px + env(safe-area-inset-bottom))}
+ #main h1{font-size:22px}
+ /* 터치 타깃 확대 */
+ button{padding:8px 13px}
+ button.small{padding:6px 10px}
+ button.gtx{min-width:42px;padding:8px 10px}
+ button.ghost{padding:8px 10px}
+ .card .row button,.card .row button:not(.p):not(.d){padding:7px 11px;font-size:13px}
+ /* 좁은 폭에서 카드가 세로로 접히도록 */
+ .card{flex-wrap:wrap;gap:8px;padding:11px 13px}
+ .card .l{flex:1 1 100%}
+ .card .r,.card>.row{width:100%;justify-content:flex-start;flex-wrap:wrap}
+ .counts{flex-wrap:wrap}.counts>span{flex:1 1 calc(50% - 9px);min-width:0}
+ .counts .gauge{margin-left:0}
+ /* 필드/입력 = 세로 스택, 풀폭 */
+ .fld{flex-direction:column;align-items:stretch;gap:4px}.fld label{width:auto}.fld input{width:100%}
+ input:not([type=checkbox]):not([type=radio]){width:100%}
+ .row input{flex:1 1 auto}
+ /* 모달 = 전체화면(폰) + 안전영역(노치·홈바) */
+ .lmodal{width:100vw;max-width:100vw;height:100dvh;max-height:100dvh;border-radius:0}
+ #smodal[open]{height:100dvh}
+ .lmodal>.hd{padding-top:calc(14px + env(safe-area-inset-top));padding-left:calc(17px + env(safe-area-inset-left));padding-right:calc(17px + env(safe-area-inset-right))}
+ .lmodal>.body{padding-left:calc(19px + env(safe-area-inset-left));padding-right:calc(19px + env(safe-area-inset-right));padding-bottom:calc(24px + env(safe-area-inset-bottom))}
+ .lmodal>pre{padding-left:calc(15px + env(safe-area-inset-left));padding-right:calc(15px + env(safe-area-inset-right));padding-bottom:calc(15px + env(safe-area-inset-bottom))}
+ /* ⋯ 드롭다운(Oat popover)이 좁은 화면에서 좌상단에 붙어 잘리는 문제 → 하단 시트로 고정 */
+ menu[popover]:popover-open{position:fixed!important;left:8px!important;right:8px!important;top:auto!important;bottom:calc(8px + env(safe-area-inset-bottom))!important;
+   width:auto!important;max-width:none!important;min-width:0!important;margin:0!important;max-height:70vh!important;overflow:auto!important}
+ menu[popover] button{width:100%;justify-content:flex-start;padding:11px 12px;font-size:14px}
+}
 </style></head><body>
+<div id="mtop"><button id="hamb" class="ghost" aria-label="메뉴 열기" onclick="toggleNav()">☰</button><h2>⟳ Loops</h2><span class="sp"></span><span id="mtopattn" onclick="closeNav();selectAttention()"></span><button class="ghost" aria-label="원격·알림 설정" title="원격·알림" onclick="closeNav();openR()" style="font-size:17px">🔔</button></div>
+<div id="backdrop" onclick="closeNav()"></div>
 <div id="side"><div class="row" style="justify-content:space-between;margin-bottom:8px"><h2>⟳ Loops</h2><button class="ghost" id="themebtn" title="라이트/다크 전환" aria-label="라이트/다크 전환" onclick="toggleTheme()">🌙</button></div>
 <div style="display:flex;gap:6px;margin-bottom:12px"><button class="p" style="flex:1;justify-content:center" onclick="openProductNew()">+ 새 제품</button><button class="p" style="flex:1;justify-content:center" onclick="openCreate()">+ 새 loop</button></div><div id="connlost"></div><div id="attnsum"></div><div id="looplist"></div>
 <div class="sec">디스패처(전역)</div><div id="gctl" class="row"></div></div>
@@ -211,6 +263,22 @@ h1{letter-spacing:-.4px;font-weight:700}
  <div class="row" style="margin-top:8px"><button class="p" onclick="botStart()">▶ 봇 시작</button> <button class="d" onclick="botStop()">■ 중지</button> <span id="tgrun" class="muted" style="font-size:12px"></span></div>
  <div class="muted" style="font-size:11px;margin-top:4px">@BotFather → /newbot → 토큰 저장 → ▶ 봇 시작 → 봇에게 아무 메시지 = 페어링. 이후 게이트에 답장으로 결정·버튼 탭. loops.env(gitignore) 보관 · 값 재표시 안 함. (대시보드가 떠 있어야 알림 동작)</div>
 </div></dialog>
+<dialog id="rmodal" class="lmodal" closedby="any"><div class="hd"><b>📱 폰 원격 접속 <span class="muted" style="font-weight:400;font-size:12px">· Tailscale</span></b><span style="flex:1"></span><span id="rflash" class="live" style="margin-right:12px;font-size:12px"></span><button aria-label="닫기" onclick="closeR()">✕</button></div><div class="body">
+ <div id="rstat" class="muted" style="font-size:12px;margin-bottom:10px">…</div>
+ <div class="row" style="gap:8px"><button class="p" id="rbtn_on" onclick="remoteToggle(true)">▶ 원격 켜기</button> <button class="d" id="rbtn_off" onclick="remoteToggle(false)" style="display:none">■ 끄기</button></div>
+ <div id="rlive" style="display:none;margin-top:16px">
+  <div class="sec">폰에서 이 주소(HTTPS)를 열거나 QR을 스캔하세요 <span class="muted" style="font-size:11px;font-weight:400">폰에도 Tailscale 앱이 로그인돼 있어야 함(같은 tailnet)</span></div>
+  <div class="row" style="gap:8px;align-items:center"><input id="rurl" readonly aria-label="원격 접속 주소" style="flex:1;width:auto;font-family:var(--mono);font-size:12px"> <button class="p" onclick="copyRemoteUrl()">복사</button> <button onclick="window.open(document.getElementById('rurl').value,'_blank','noopener')">열기</button></div>
+  <div style="display:flex;justify-content:center;margin-top:16px"><div id="rqr" style="background:#fff;padding:12px;border-radius:8px;line-height:0"></div></div>
+  <div class="muted" style="font-size:11px;margin-top:10px">폰에서 연 뒤 <b>공유 → 홈 화면에 추가</b> 하면 앱처럼 쓰고, 아래 푸시 알림도 켤 수 있습니다(iOS는 홈화면 앱에서만 푸시 가능).</div>
+ </div>
+ <div class="sec" style="margin-top:20px">🔔 푸시 알림 <span class="muted" style="font-size:11px;font-weight:400">루프가 사람을 기다리면(🔴 human-gate 등) 앱이 꺼져 있어도 폰이 울림</span></div>
+ <div class="row" style="gap:8px"><button class="p" id="pushbtn" onclick="pushToggle()">알림 켜기</button> <button id="pushtest" onclick="pushTest()" style="display:none">테스트 알림</button></div>
+ <div id="pushnote" class="muted" style="font-size:11px;margin-top:6px"></div>
+ <div id="pushloops" style="margin-top:12px"></div>
+ <div class="muted" style="font-size:11px;margin-top:14px">원격은 <code>tailscale cert</code> 로 이 노드의 tailnet 정식 인증서를 받아 대시보드 서버가 tailscale IP에 <b>HTTPS</b> 리스너를 직접 엽니다 — LAN·공개 인터넷 노출 없이 내 tailnet 기기에서만. <code>tailscale serve</code> 설정은 건드리지 않습니다. 비밀번호를 더하려면 loops.env 에 <code>LOOPS_REMOTE_AUTH="user:pass"</code> (대시보드 재시작).</div>
+</div></dialog>
+<script src="/vendor/qrcode.min.js"></script>
 <script>
 var sel=localStorage.getItem('loop')||null, renderedLoop=null, sRef=null, sLoop=null, sDispatcher=false, sBot=false, sTimer=null, lastData=null;
 var failCount=0, lastOk=0;
@@ -221,7 +289,9 @@ var CFG_FIELDS=[{k:'name',label:'이름'},{k:'emoji',label:'emoji'},{k:'maxWorke
 function rel(ts){if(!ts)return'';var s=Math.floor(Date.now()/1000)-ts,a=Math.abs(s),x=s<0?' 후':' 전';if(a<60)return a+'s'+x;if(a<3600)return Math.floor(a/60)+'m'+x;if(a<86400)return Math.floor(a/3600)+'h'+x;return Math.floor(a/86400)+'d'+x;}
 function esc(x){return String(x==null?'':x).replace(/[&<>"]/g,function(c){return{'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c];});}
 function ctl(a,ex){return fetch('/api/control',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify(Object.assign({action:a,loop:sel},ex||{}))}).then(function(r){return r.json();}).then(function(j){if(j&&j.ok===false&&j.out)alert(j.out);setTimeout(load,300);return j;});}
-function selectLoop(id){sel=id;localStorage.setItem('loop',id);renderedLoop=null;load();}
+function selectLoop(id){sel=id;localStorage.setItem('loop',id);renderedLoop=null;closeNav();load();}
+function toggleNav(){document.body.classList.toggle('nav-open');}
+function closeNav(){document.body.classList.remove('nav-open');}
 function selectAttention(){var L=(lastData&&lastData.loops||[]).find(function(x){return (x.attentionCount||0)>0;});if(L)selectLoop(L.id);}
 function viewSession(ref,label){sRef=ref;sLoop=null;sDispatcher=false;sBot=false;document.getElementById('stitle').textContent=label;showS();}
 function viewLog(loop){sRef=null;sLoop=loop;sDispatcher=false;sBot=false;document.getElementById('stitle').textContent=loop+' orchestrator 로그';showS();}
@@ -335,6 +405,7 @@ function render(d){
  document.getElementById('looplist').innerHTML=porder.map(function(k){var body=pgroups[k].map(loopItem).join('');if(!k)return body;var P=(d.products||{})[k]||{};var tt=(P.triageLast||[]).map(function(e){return e.issue+'→'+e.label;}).join(' · ');return '<div class="prodhead"><span class="pn">📦 '+esc(P.name||k)+'</span>'+(P.linearProjectUrl?'<a href="'+P.linearProjectUrl+'" target="_blank" title="Linear 프로젝트 열기">↗</a>':'')+(P.triage?'<span class="tt" title="'+esc(tt||'오늘 분류 없음')+'">🏷'+(P.triageToday||0)+'</span>':'')+'<button class="pg" title="제품 설정" aria-label="제품 설정" onclick="openProduct(\''+k+'\')">⚙️</button></div>'+body;}).join('')||'<div class=muted style="padding:8px">loop 없음</div>';
  var attn=d.loops.reduce(function(s,L){return s+(L.attentionCount||0);},0);
  document.getElementById('attnsum').innerHTML=attn>0?'<span class="attn" onclick="selectAttention()" title="개입 필요한 첫 loop로 이동">🔴 '+attn+'건 개입 필요</span>':'<span class="clean">✓ clean</span>';
+ document.getElementById('mtopattn').textContent=attn>0?('🔴 '+attn):'';   // 모바일 탑바 주의 표시
  var gd=d.dispatcher;
  var _pz=gd.paused;
  var gH='<div class="row" style="gap:8px;margin-bottom:9px"><span class="dot '+(gd.running?(_pz?'pause':'on'):'off')+'"></span><b style="font-size:13px;letter-spacing:.2px">'+(gd.running?(_pz?'paused':'running'):'stopped')+'</b></div>'
@@ -346,6 +417,7 @@ function render(d){
   +'<menu popover id="gmenu" role="menu" aria-label="디스패처 메뉴">'
   +'<button role="menuitem" class="ghost" popovertarget="gmenu" popovertargetaction="hide" onclick="viewDispatcherLog()">📋 dispatcher 로그</button>'
   +'<button role="menuitem" class="ghost" popovertarget="gmenu" popovertargetaction="hide" onclick="viewBotLog()">🤖 봇 로그'+(d.telegram?(d.telegram.running?' ●':(d.telegram.configured?' ○':'')):'')+'</button>'
+  +'<button role="menuitem" class="ghost" popovertarget="gmenu" popovertargetaction="hide" onclick="openR()">📱 폰 원격 접속'+(d.remote?(d.remote.on?' ●':''):'')+'</button>'
   +'<button role="menuitem" class="ghost" popovertarget="gmenu" popovertargetaction="hide" onclick="openWS()">⚙️ 워크스페이스 설정</button>'
   +'<hr>'
   +'<button role="menuitem" class="ghost" popovertarget="gmenu" popovertargetaction="hide" onclick="ctl(\''+(d.awake?'awake-off':'awake-on')+'\')">'+(d.awake?'☕ 안잠 켜짐 · 끄기':'💤 잠자기방지 · 켜기')+'</button>'
@@ -407,6 +479,71 @@ function openSettings(){var L=lastData&&lastData.loops.find(function(x){return x
 function closeO(){document.getElementById('omodal').close();}
 function openWS(){document.getElementById('linearkeybox').value='';document.getElementById('linkeystat').textContent=(lastData&&lastData.linearKey)?'✓ 설정됨':'⚠️ 미설정';var tg=(lastData&&lastData.telegram)||{};document.getElementById('tgtokenbox').value='';document.getElementById('tgstat').textContent=tg.configured?(tg.paired?'✓ 연결됨':'⏳ 페어링 대기'):'⚠️ 미설정';document.getElementById('tgrun').textContent=tg.running?'● 실행 중':'○ 정지';document.getElementById('wsmodal').showModal();}
 function closeWS(){document.getElementById('wsmodal').close();}
+function openR(){document.getElementById('rmodal').showModal();refR();refreshPush();}
+function closeR(){document.getElementById('rmodal').close();}
+function refR(){fetch('/api/remote').then(function(r){return r.json();}).then(function(d){
+ var ts=d.tailscale||{},st;
+ if(!ts.installed)st='⚠️ tailscale 미설치 — tailscale.com/download';
+ else if(!ts.running)st='⚠️ tailscale 미실행 — 터미널에서 `tailscale up`';
+ else st='✅ tailscale 실행 중'+(ts.dnsName?(' · '+esc(ts.dnsName)):'');
+ if(d.authRequired)st+=' · 🔒 비밀번호 보호됨';
+ document.getElementById('rstat').innerHTML=st;
+ var on=!!d.on;
+ document.getElementById('rbtn_on').style.display=on?'none':'';
+ document.getElementById('rbtn_off').style.display=on?'':'none';
+ var live=document.getElementById('rlive');
+ if(on&&d.url){live.style.display='';document.getElementById('rurl').value=d.url;renderQR(d.url);}
+ else live.style.display='none';
+}).catch(function(){document.getElementById('rstat').textContent='상태 조회 실패';});}
+function remoteToggle(on){ctl(on?'remote-on':'remote-off').then(function(j){rflash(on?(j&&j.ok?'원격 켜짐':'실패'):'원격 끔');setTimeout(refR,400);});}
+function renderQR(url){var el=document.getElementById('rqr');if(!window.qrcode){el.style.lineHeight='';el.textContent='(QR 라이브러리 로드 실패 — /vendor/qrcode.min.js)';return;}try{var qr=qrcode(0,'M');qr.addData(url);qr.make();el.innerHTML=qr.createSvgTag({cellSize:6,margin:2});}catch(e){el.style.lineHeight='';el.textContent='(QR 생성 실패: '+e.message+')';}}
+function copyRemoteUrl(){var v=document.getElementById('rurl').value;if(navigator.clipboard&&navigator.clipboard.writeText)navigator.clipboard.writeText(v).then(function(){rflash('복사됨');},function(){rflash('복사 실패');});else{var i=document.getElementById('rurl');i.select();try{document.execCommand('copy');rflash('복사됨');}catch(e){rflash('복사 실패');}}}
+function rflash(m){var e=document.getElementById('rflash');if(e){e.textContent=m;setTimeout(function(){if(e.textContent===m)e.textContent='';},1800);}}
+/* ===== 웹푸시(PWA) ===== */
+function urlB64ToBytes(b64){var pad=(b64+'='.repeat((4-b64.length%4)%4)).replace(/-/g,'+').replace(/_/g,'/');return Uint8Array.from(atob(pad),function(c){return c.charCodeAt(0);});}
+var isIOS=/iPad|iPhone|iPod/.test(navigator.userAgent)||(navigator.userAgent.includes('Mac')&&'ontouchend' in document);
+var installedPWA=matchMedia('(display-mode: standalone)').matches||navigator.standalone===true;
+function pushBlocker(){
+ if(!window.isSecureContext)return 'HTTPS에서만 알림을 켤 수 있습니다. 대시보드 ⋯→원격을 켠 뒤 폰에서 Tailscale HTTPS 주소로 여세요.';
+ if(isIOS&&!installedPWA)return 'iOS는 홈 화면에 추가한 앱에서만 푸시가 됩니다. 공유 → 홈 화면에 추가 후, 그 아이콘으로 여세요.';
+ if(!('serviceWorker' in navigator)||!('PushManager' in window))return '이 브라우저는 웹 푸시를 지원하지 않습니다.';
+ return null;}
+function refreshPush(){
+ var btn=document.getElementById('pushbtn'),test=document.getElementById('pushtest'),note=document.getElementById('pushnote');
+ var blk=pushBlocker();
+ if(blk){btn.disabled=true;btn.textContent='알림 사용 불가';test.style.display='none';note.textContent=blk;document.getElementById('pushloops').innerHTML='';return;}
+ navigator.serviceWorker.ready.then(function(reg){return reg.pushManager.getSubscription();}).then(function(sub){
+  var on=!!sub&&Notification.permission==='granted';
+  btn.disabled=false;btn.textContent=on?'알림 끄기':'알림 켜기';btn.classList.toggle('d',on);
+  test.style.display=on?'':'none';
+  note.textContent=on?'켜짐 — 루프가 사람을 기다리면 앱이 꺼져 있어도 폰이 울립니다.':'루프가 사람 판단(🔴)을 기다릴 때 폰으로 알림을 받습니다.';
+  renderPushLoops(on);
+ }).catch(function(e){note.textContent='알림 상태 확인 실패: '+e;});}
+function renderPushLoops(on){
+ var el=document.getElementById('pushloops');
+ fetch('/api/push/prefs').then(function(r){return r.json();}).then(function(d){
+  if(!d.loops||!d.loops.length){el.innerHTML='';return;}
+  el.innerHTML='<div class="muted" style="font-size:11px;margin-bottom:6px">루프별 알림'+(on?'':' <span style="opacity:.7">(먼저 알림을 켜세요)</span>')+'</div>'+d.loops.map(function(L){
+   var muted=d.muted&&d.muted[L.id];
+   return '<label style="display:flex;align-items:center;gap:9px;padding:7px 0;font-size:13px;cursor:pointer'+(on?'':';opacity:.5')+'"><input type="checkbox" '+(muted?'':'checked')+(on?'':' disabled')+' onchange="pushMute(\''+esc(L.id)+'\',!this.checked)"> <span>'+esc(L.emoji)+' '+esc(L.name)+'</span></label>';
+  }).join('');
+ }).catch(function(){el.innerHTML='';});}
+function pushMute(loop,muted){fetch('/api/push/mute',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({loop:loop,muted:muted})}).then(function(r){return r.json();}).then(function(j){rflash(muted?'해당 루프 알림 끔':'해당 루프 알림 켬');}).catch(function(){rflash('변경 실패');});}
+function pushToggle(){
+ (async function(){try{
+  var reg=await navigator.serviceWorker.ready, existing=await reg.pushManager.getSubscription();
+  if(existing){
+   await fetch('/api/push/unsubscribe',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({endpoint:existing.endpoint})});
+   await existing.unsubscribe();rflash('알림 껐습니다');
+  }else{
+   if((await Notification.requestPermission())!=='granted'){document.getElementById('pushnote').textContent='알림 권한이 거부됐습니다. 설정에서 허용해주세요.';return;}
+   var key=(await (await fetch('/api/push/key')).json()).key;
+   var sub=await reg.pushManager.subscribe({userVisibleOnly:true,applicationServerKey:urlB64ToBytes(key)});
+   await fetch('/api/push/subscribe',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify(sub)});
+   rflash('알림 켰습니다');
+  }
+ }catch(e){document.getElementById('pushnote').textContent='알림 설정 실패: '+e;}refreshPush();})();}
+function pushTest(){fetch('/api/push/test',{method:'POST'}).then(function(r){return r.json();}).then(function(j){rflash('테스트 푸시 전송('+(j.sent||0)+')');}).catch(function(e){rflash('테스트 실패');});}
 function saveConfigRaw(){var t=document.getElementById('cfgbox').value,o;try{o=JSON.parse(t);}catch(e){alert('JSON 오류: '+e.message);return;}ctl('save-config-raw',{config:o}).then(function(j){if(j&&j.ok)flash('raw config 저장됨');});}
 function flash(m){['oflash','wsflash','pflash'].forEach(function(id){var e=document.getElementById(id);if(e){e.textContent=m;setTimeout(function(){if(e.textContent===m)e.textContent='';},2500);}});}
 var attLabel={'merge-ready':'머지 대기','ci-failed':'CI 실패','changes':'변경요청','human-gate':'사람 판단','pr-closed':'PR 닫힘 — 정리 필요','stalled-worker':'⚠️ worker 탭 없음(완료됐거나 중단됨) — 확인 필요','stuck':'🧟 멈춤 · 자가복구 실패','wedged':'🥶 화면 정지(멈춘 claude) — 내용보기 후 ✕닫기 시 자가복구','rework-exhausted':'🔁 재작업 상한 — 사람 확인 필요'};
@@ -438,6 +575,10 @@ document.addEventListener('keydown',function(ev){
 });
 function renderConnLost(){var el=document.getElementById('connlost');if(failCount<2){el.innerHTML='';return;}var ago=lastOk?' — 마지막 갱신 '+rel(Math.floor(lastOk/1000)):'';el.innerHTML='<span class="cl">⚠️ 서버 연결 끊김'+ago+'</span>';}
 function load(){fetch('/api/status').then(function(r){return r.json();}).then(function(d){failCount=0;lastOk=Date.now();render(d);renderConnLost();}).catch(function(){failCount++;renderConnLost();});}
+/* PWA 서비스워커 등록(푸시 수신용) + 알림 클릭 딥링크(?loop=) */
+if('serviceWorker' in navigator)navigator.serviceWorker.register('/sw.js').catch(function(e){console.warn('SW 등록 실패',e);});
+navigator.serviceWorker&&navigator.serviceWorker.addEventListener('message',function(e){if(e.data&&e.data.type==='select-loop'&&e.data.loop)selectLoop(e.data.loop);});
+(function(){var dl=new URLSearchParams(location.search).get('loop');if(dl){sel=dl;localStorage.setItem('loop',dl);}})();
 load();setInterval(load,2000);
 </script>
 <script src="/vendor/oat.min.js" defer></script>

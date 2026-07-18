@@ -9,6 +9,7 @@ import { fileURLToPath } from 'node:url';
 import { dirname } from 'node:path';
 import { loadEnv, setEnvVar } from './bin/env-file.mjs';
 import { mergeProduct } from './bin/loop-config.mjs';
+import { generateVapidKeys, sendNotification } from './bin/webpush.mjs';
 
 const ROOT = process.env.LOOPS_HOME || dirname(fileURLToPath(import.meta.url));
 const ENV = loadEnv(ROOT);
@@ -187,7 +188,7 @@ function loopStatus(lid, allTabs) {
 }
 function status() {
   const allTabs = tabsAll();
-  return { now: Math.floor(Date.now() / 1000), dispatcher: globalDispatcher(), awake: !!awakeStatus(), linearKey: !!LINEAR_KEY, telegram: telegramStatus(), products: productsStatus(), loops: listLoopIds().map(l => loopStatus(l, allTabs)) };
+  return { now: Math.floor(Date.now() / 1000), dispatcher: globalDispatcher(), awake: !!awakeStatus(), linearKey: !!LINEAR_KEY, telegram: telegramStatus(), remote: { wanted: remoteWanted, on: remoteServers.length > 0, url: remoteUrl }, products: productsStatus(), loops: listLoopIds().map(l => loopStatus(l, allTabs)) };
 }
 
 // 제품 계층 메타(products/<id>/product.json) + triage 활동 — 사이드바 product 그룹 헤더가 소비.
@@ -409,6 +410,8 @@ async function control(a, p) {
       return { ok: true, out: '🤖 봇 시작 (cmux 패널) — 페어링 안 됐으면 텔레그램에서 봇에게 메시지 보내세요' };
     }
     case 'bot-stop': { writeFileSync(`${GSTATE}/STOPPED.bot`, '');   /* 의도적 정지 마커 — supervisor가 재기동하지 않도록 */ execFile('/usr/bin/pkill', ['-f', `${ROOT}/bin/notify-bot.mjs`], () => {}); return { ok: true, out: '봇 중지' }; }
+    case 'remote-on': return openRemote();     // tailscale IP에 추가 바인딩(폰 원격) + LOOPS_REMOTE=1 영속. 런타임 즉시 적용(재시작 불필요).
+    case 'remote-off': return disableRemote(); // 원격 리스너 닫기 + LOOPS_REMOTE=0. 127.0.0.1(로컬)은 그대로.
     case 'save-mission': { if (!lid) return { ok: false }; try { writeFileSync(`${LOOPS}/${lid}/mission.md`, p.content || ''); return { ok: true, out: 'mission 저장' }; } catch (e) { return { ok: false, out: '' + e }; } }
     case 'save-vision': { if (!lid) return { ok: false }; try { writeFileSync(`${LOOPS}/${lid}/vision.md`, p.content || ''); return { ok: true, out: 'vision 저장 (다음 run부터 주입)' }; } catch (e) { return { ok: false, out: '' + e }; } }
     case 'save-learnings': { if (!lid) return { ok: false }; try { mkdirSync(`${LOOPS}/${lid}/state`, { recursive: true }); writeFileSync(`${LOOPS}/${lid}/state/learnings.md`, p.content || ''); return { ok: true, out: 'learnings 저장 (다음 run부터 주입)' }; } catch (e) { return { ok: false, out: '' + e }; } }
@@ -599,19 +602,21 @@ function sessionText(u) {
 }
 function promptText(u) { const lid = u.searchParams.get('loop'); if (!lid) return ''; if (u.searchParams.get('learnings')) return readText(`${LOOPS}/${lid}/state/learnings.md`); if (u.searchParams.get('vision')) return readText(`${LOOPS}/${lid}/vision.md`); return readText(`${LOOPS}/${lid}/mission.md`); }
 
-// 원격 노출 인증 게이트: 프록시(터널) 경유 요청에만 Basic auth 요구. 로컬 직접(127.0.0.1, XFF 없음)은 무인증이라 cmux 패널 사용은 그대로.
-// LOOPS_REMOTE_AUTH="user:pass" (loops.env). 미설정이면 게이트 비활성 = 로컬 전용 기본 동작 유지.
+// 원격 노출 인증 게이트: 로컬 loopback(cmux 패널) 직접 접속만 무인증. 그 외(터널 XFF·tailscale IP 등
+// 비-loopback 원격)는 LOOPS_REMOTE_AUTH="user:pass"(loops.env) 설정 시 Basic auth 요구.
+// 미설정이면 게이트 비활성 = 로컬 전용 기본 동작 유지(tailnet 자체가 사설 경계라 비밀번호는 선택).
 const REMOTE_AUTH = ENV.LOOPS_REMOTE_AUTH || process.env.LOOPS_REMOTE_AUTH || '';
 function viaProxy(req) { return !!(req.headers['x-forwarded-for'] || req.headers['cf-connecting-ip'] || req.headers['x-forwarded-host']); }
+function isLoopback(req) { const a = (req.socket && req.socket.remoteAddress) || ''; return a === '127.0.0.1' || a === '::1' || a === '::ffff:127.0.0.1'; }
 function authOK(req) {
-  if (!REMOTE_AUTH) return true;     // 토큰 미설정 → 게이트 없음
-  if (!viaProxy(req)) return true;   // 로컬 직접 접속 → 신뢰 (터널은 항상 XFF를 붙임)
+  if (!REMOTE_AUTH) return true;                       // 토큰 미설정 → 게이트 없음
+  if (isLoopback(req) && !viaProxy(req)) return true;  // 로컬 cmux 패널 직접 접속만 신뢰 (터널은 loopback이라도 XFF를 붙임 → 게이트)
   const m = /^Basic (.+)$/.exec(req.headers.authorization || '');
   if (!m) return false;
   try { return Buffer.from(m[1], 'base64').toString() === REMOTE_AUTH; } catch { return false; }
 }
 
-const server = http.createServer((req, res) => {
+function handler(req, res) {
   const u = new URL(req.url, 'http://localhost');
   if (!authOK(req)) { res.writeHead(401, { 'WWW-Authenticate': 'Basic realm="loops dashboard"', 'content-type': 'text/plain; charset=utf-8' }); res.end('인증 필요'); return; }
   // HTML은 요청마다 fresh 읽기 → dashboard.html 편집 시 새로고침만 하면 즉시 반영 (서버 재시작 불필요)
@@ -628,13 +633,162 @@ const server = http.createServer((req, res) => {
   if (req.method === 'GET' && u.pathname === '/api/session') { res.writeHead(200, { 'content-type': 'text/plain; charset=utf-8' }); res.end(sessionText(u)); return; }
   if (req.method === 'GET' && u.pathname === '/api/mission') { res.writeHead(200, { 'content-type': 'text/plain; charset=utf-8' }); res.end(promptText(u)); return; }
   if (req.method === 'GET' && u.pathname === '/api/config') { const lid = u.searchParams.get('loop'); res.writeHead(200, { 'content-type': 'application/json' }); res.end(JSON.stringify(readJSON(cfgPath(lid)) || {}, null, 2)); return; }
+  if (req.method === 'GET' && u.pathname === '/api/remote') {   // 원격 모달용 라이브 상태(tailscale CLI 조회 포함 — status()와 달리 매 폴링엔 안 씀)
+    const info = tailscaleInfo(); const url = remoteUrl || computeRemoteUrl(info);
+    res.writeHead(200, { 'content-type': 'application/json' });
+    res.end(JSON.stringify({ on: remoteServers.length > 0, wanted: remoteWanted, url, port: PORT, secure: true, authRequired: !!REMOTE_AUTH, pushSubs: push.subs.length, tailscale: { installed: info.installed, running: info.running, dnsName: info.dnsName, ips: info.ips, error: info.error || '' } }));
+    return;
+  }
+  // ── PWA (홈화면 추가 + 웹푸시). sw.js는 스코프 때문에 반드시 루트 경로에서 서빙. ──
+  if (req.method === 'GET' && u.pathname === '/sw.js') { res.writeHead(200, { 'content-type': 'text/javascript; charset=utf-8', 'cache-control': 'no-cache', 'service-worker-allowed': '/' }); res.end(readText(`${ROOT}/vendor/sw.js`) || '// sw 없음'); return; }
+  if (req.method === 'GET' && u.pathname === '/manifest.json') {
+    res.writeHead(200, { 'content-type': 'application/manifest+json; charset=utf-8' });
+    res.end(JSON.stringify({ name: 'Loops', short_name: 'Loops', start_url: '/', scope: '/', display: 'standalone', background_color: '#0a0e13', theme_color: '#0d131c', icons: [{ src: '/icon-192.png', sizes: '192x192', type: 'image/png', purpose: 'any' }, { src: '/icon-512.png', sizes: '512x512', type: 'image/png', purpose: 'any maskable' }] }));
+    return;
+  }
+  if (req.method === 'GET' && (u.pathname === '/icon-192.png' || u.pathname === '/icon-512.png')) {
+    let buf; try { buf = readFileSync(`${ROOT}/vendor${u.pathname}`); } catch { res.writeHead(404); res.end('no icon'); return; }
+    res.writeHead(200, { 'content-type': 'image/png', 'cache-control': 'max-age=86400' }); res.end(buf); return;
+  }
+  if (req.method === 'GET' && u.pathname === '/api/push/key') { res.writeHead(200, { 'content-type': 'application/json' }); res.end(JSON.stringify({ key: push.vapid.publicKey })); return; }
+  if (req.method === 'GET' && u.pathname === '/api/push/prefs') {   // 루프별 알림 on/off (per-project) — muted 맵 + 루프 목록
+    const loops = listLoopIds().map(id => { const c = readJSON(cfgPath(id)) || {}; return { id, name: c.name || id, emoji: c.emoji || '🔁' }; });
+    res.writeHead(200, { 'content-type': 'application/json' }); res.end(JSON.stringify({ subs: push.subs.length, muted: push.muted, loops })); return;
+  }
+  if (req.method === 'POST' && (u.pathname === '/api/push/subscribe' || u.pathname === '/api/push/unsubscribe' || u.pathname === '/api/push/test' || u.pathname === '/api/push/mute')) {
+    let b = ''; req.on('data', d => b += d); req.on('end', async () => {
+      let p = {}; try { p = JSON.parse(b || '{}'); } catch {}
+      let out = { ok: true };
+      if (u.pathname === '/api/push/subscribe') {
+        if (p && p.endpoint && p.keys && p.keys.p256dh && p.keys.auth) { if (!push.subs.some(s => s.endpoint === p.endpoint)) { push.subs.push({ endpoint: p.endpoint, keys: p.keys }); savePush(); } out = { ok: true, count: push.subs.length }; }
+        else out = { ok: false, out: 'bad subscription' };
+      } else if (u.pathname === '/api/push/unsubscribe') {
+        const before = push.subs.length; push.subs = push.subs.filter(s => s.endpoint !== (p && p.endpoint)); if (push.subs.length !== before) savePush(); out = { ok: true, count: push.subs.length };
+      } else if (u.pathname === '/api/push/mute') {
+        if (p && p.loop) { if (p.muted) push.muted[p.loop] = true; else delete push.muted[p.loop]; savePush(); }   // muted=true 끔 / false 켬
+        out = { ok: true, muted: push.muted };
+      } else { const r = await sendPush({ title: 'Loops', body: '🔔 푸시 알림이 정상 동작합니다.', tag: 'test' }); out = { ok: true, sent: r.sent }; }
+      res.writeHead(200, { 'content-type': 'application/json' }); res.end(JSON.stringify(out));
+    });
+    return;
+  }
   if (req.method === 'POST' && u.pathname === '/api/control') {
     let b = ''; req.on('data', d => b += d); req.on('end', async () => { let p = {}; try { p = JSON.parse(b || '{}'); } catch {} const r = await control(p.action, p); res.writeHead(200, { 'content-type': 'application/json' }); res.end(JSON.stringify(r)); }); return;
   }
   res.writeHead(404); res.end('not found');
-});
+}
+
+// ── Tailscale 원격(폰) 노출 — HTTPS ────────────────────────────────────────
+// `tailscale serve`를 건드리지 않는다(사용자가 이미 다른 포트로 쓸 수 있음 → 매핑 덮어쓰기 위험).
+// 대신 `tailscale cert`로 이 노드의 tailnet 정식 인증서를 받아, 대시보드 서버가 tailscale IP(들)에
+// **HTTPS** 리스너를 직접 연다: 127.0.0.1(항상, HTTP) + 100.x/fd7a(원격 켤 때만, HTTPS).
+// HTTPS가 필수인 이유: iOS/Android 웹푸시는 secure context에서만 동작(웹푸시 알림 = 이 HTTPS 위에서).
+// 0.0.0.0가 아니라 tailscale IP에만 바인딩 → LAN 노출 없이 tailnet 전용(전송은 TLS + WireGuard).
+let remoteServers = [];                                   // 열려 있는 tailscale-IP HTTPS 리스너들(v4/v6)
+let remoteUrl = '';                                       // 마지막으로 연 원격 URL(status 폴링에 CLI 안 쓰도록 캐시)
+let remoteWanted = /^(1|true|on|yes)$/i.test(String(ENV.LOOPS_REMOTE || process.env.LOOPS_REMOTE || ''));
+const CERT_CRT = `${GSTATE}/ts-remote.crt`, CERT_KEY = `${GSTATE}/ts-remote.key`;
+function tailscaleInfo() {
+  try {
+    const j = JSON.parse(execFileSync('tailscale', ['status', '--json'], { timeout: 4000, encoding: 'utf8' }));
+    const ips = (j.Self && j.Self.TailscaleIPs) || [];
+    const dnsName = String((j.Self && j.Self.DNSName) || '').replace(/\.$/, '');
+    return { installed: true, running: j.BackendState === 'Running', ips, dnsName, error: '' };
+  } catch (e) {
+    const missing = /ENOENT/.test(e.message || '');       // tailscale 바이너리 부재
+    return { installed: !missing, running: false, ips: [], dnsName: '', error: missing ? 'tailscale 미설치' : e.message };
+  }
+}
+function computeRemoteUrl(info) { return info.dnsName ? `https://${info.dnsName}:${PORT}/` : ''; }   // 인증서 SAN = MagicDNS fqdn이어야 유효 → dnsName 필수
+// tailnet 정식 인증서 확보(fresh면 재사용, 아니면 `tailscale cert` 재발급). 반환 {cert,key} 또는 throw.
+function ensureCert(fqdn) {
+  let fresh = false;
+  try { fresh = existsSync(CERT_CRT) && existsSync(CERT_KEY) && (Date.now() - statSync(CERT_CRT).mtimeMs) < 30 * 864e5; } catch {}
+  if (!fresh) {
+    execFileSync('tailscale', ['cert', '--cert-file', CERT_CRT, '--key-file', CERT_KEY, fqdn], { timeout: 60000, stdio: ['ignore', 'ignore', 'pipe'] });
+  }
+  return { cert: readFileSync(CERT_CRT), key: readFileSync(CERT_KEY) };
+}
+function closeRemote() { for (const s of remoteServers) { try { s.close(); } catch {} } remoteServers = []; }
+function openRemote() {
+  const info = tailscaleInfo();
+  if (!info.installed) return { ok: false, out: 'tailscale가 설치돼 있지 않습니다 → https://tailscale.com/download' };
+  if (!info.running) return { ok: false, out: 'tailscale가 실행/로그인 상태가 아닙니다 — 터미널에서 `tailscale up` 후 다시 시도하세요.' };
+  if (!info.ips.length) return { ok: false, out: 'tailscale IP를 찾지 못했습니다 (`tailscale status` 확인).' };
+  if (!info.dnsName) return { ok: false, out: 'MagicDNS 이름이 없어 HTTPS 인증서를 발급할 수 없습니다 — tailnet 관리자에서 MagicDNS + HTTPS Certificates 를 켜세요.' };
+  let creds;
+  try { creds = ensureCert(info.dnsName); }
+  catch (e) { const m = String(e.stderr || e.message || e); return { ok: false, out: 'tailscale cert 발급 실패 — tailnet 관리자에서 HTTPS Certificates 를 켜세요. (' + m.trim().split('\n').pop() + ')' }; }
+  closeRemote();                                          // 재-open 멱등(IP/인증서 변경 대비)
+  let bound = 0;
+  for (const ip of info.ips) {
+    try {
+      const s = https.createServer({ cert: creds.cert, key: creds.key }, handler);
+      s.on('error', e => console.error(`원격 리스너 ${ip}:${PORT} 오류:`, e.message));   // EADDRNOTAVAIL 등 비동기 오류 — 나머지 IP는 계속
+      s.listen(PORT, ip, () => console.log(`Loops dashboard 원격(HTTPS) → https://${ip.includes(':') ? `[${ip}]` : ip}:${PORT}`));
+      remoteServers.push(s); bound++;
+    } catch (e) { console.error(`원격 listen ${ip} 실패:`, e.message); }
+  }
+  if (!bound) return { ok: false, out: 'tailscale 인터페이스 바인딩 실패 (로그 확인).' };
+  remoteUrl = computeRemoteUrl(info); remoteWanted = true;
+  try { setEnvVar(ROOT, 'LOOPS_REMOTE', '1'); } catch (e) { console.error('LOOPS_REMOTE 영속화 실패:', e.message); }
+  return { ok: true, url: remoteUrl, out: `📱 원격 켜짐 · ${remoteUrl}` };
+}
+function disableRemote() {
+  closeRemote(); remoteUrl = ''; remoteWanted = false;
+  try { setEnvVar(ROOT, 'LOOPS_REMOTE', '0'); } catch (e) { console.error('LOOPS_REMOTE 영속화 실패:', e.message); }
+  return { ok: true, out: '원격 꺼짐' };
+}
+
+// ── 웹푸시(VAPID) — 의존성 0(bin/webpush.mjs). state/push.json에 vapid 키·구독·seen 영속 ──
+const PUSH_FILE = `${GSTATE}/push.json`;
+const PUSH_SUBJECT = ENV.LOOPS_PUSH_SUBJECT || process.env.LOOPS_PUSH_SUBJECT || 'https://github.com/';   // VAPID sub — 잘 형성된 https/mailto면 됨(해석될 필요 없음)
+function loadPush() { const p = readJSON(PUSH_FILE) || {}; if (!p.vapid) p.vapid = generateVapidKeys(); p.subs = p.subs || []; p.seen = p.seen || {}; p.muted = p.muted || {}; return p; }   // muted: {loopId:true} = 그 루프 알림 끔
+let push = loadPush();
+function savePush() { try { mkdirSync(GSTATE, { recursive: true }); writeFileSync(PUSH_FILE, JSON.stringify(push, null, 2)); } catch (e) { console.error('push.json 저장 실패:', e.message); } }
+if (!existsSync(PUSH_FILE)) savePush();                   // 최초 부팅에 vapid 키 확정
+async function sendPush(payload) {
+  if (!push.subs.length) return { sent: 0 };
+  const body = JSON.stringify(payload);
+  const dead = [];
+  await Promise.all(push.subs.map(async (sub) => {
+    try {
+      const r = await sendNotification(sub, body, { subject: PUSH_SUBJECT, publicKey: push.vapid.publicKey, privateKey: push.vapid.privateKey });
+      if (r.statusCode === 404 || r.statusCode === 410) dead.push(sub.endpoint);          // 구독 영구 만료 → 정리
+      else if (r.statusCode >= 400) console.error(`push ${new URL(sub.endpoint).host} → ${r.statusCode}: ${String(r.body).slice(0, 200)}`);
+    } catch (e) { console.error(`push 실패 ${(() => { try { return new URL(sub.endpoint).host; } catch { return '?'; } })()}:`, e.message); }
+  }));
+  if (dead.length) { push.subs = push.subs.filter(s => !dead.includes(s.endpoint)); savePush(); }
+  return { sent: push.subs.length };
+}
+// 주의 신호(🔴 human-gate·rework-exhausted·stuck·CI 실패 등) diff → 새 신호만 폰으로 push. 첫 폴링(warm 전)은 무음 시드.
+const PUSH_LABEL = { 'human-gate': '🔴 사람 판단 필요', 'rework-exhausted': '⚠️ 자동반영 포기 — 사람 필요', 'ci-failed': '❌ CI 실패', 'pr-review': '👀 리뷰 요청', 'pr-closed': '🚪 PR 닫힘(정리 대상)', stuck: '🧟 stuck(자가복구 실패)', wedged: '🧊 wedged(멈춤)', 'stalled-worker': '💤 워커 정지' };
+let pushWarm = false;
+async function pushTick() {
+  if (!push.subs.length) return;                          // 구독 0 → 크립토/폴링 생략
+  let cur;
+  try { cur = status(); } catch (e) { console.error('pushTick status 실패:', e.message); return; }
+  const now = {}, fresh = [];
+  for (const loop of cur.loops || []) for (const iss of loop.issues || []) {
+    if (!iss.attention) continue;
+    const key = `${loop.id}|${iss.id}|${iss.attention}`;
+    now[key] = true;   // muted 루프도 seen엔 기록(음소거 해제 시 과거분 폭탄 방지) — 단 push는 안 함
+    if (!push.seen[key] && !push.muted[loop.id]) fresh.push({ loop, iss, att: iss.attention });
+  }
+  push.seen = now; savePush();                            // seen = 현재 주의집합(사라진 키는 자동 프루닝 → 재발생 시 재알림)
+  if (!pushWarm) { pushWarm = true; return; }             // 프로세스 첫 tick은 무음 시드(과거분 폭탄 방지)
+  for (const f of fresh) {
+    const label = PUSH_LABEL[f.att] || f.att;
+    await sendPush({ title: `${loop_emoji(f.loop)} ${f.loop.name || f.loop.id}`, body: `${label}\n${f.iss.title || f.iss.id}`, tag: `${f.loop.id}:${f.iss.id}`, loop: f.loop.id });
+  }
+}
+function loop_emoji(l) { return l.emoji || '🔁'; }
+
+const server = http.createServer(handler);
 server.listen(PORT, '127.0.0.1', () => console.log(`Loops dashboard → http://localhost:${PORT}`));
+if (remoteWanted) { const r = openRemote(); console.log(r.ok ? `Loops dashboard 원격(폰) → ${r.url}` : `Loops dashboard 원격 자동기동 실패: ${r.out}`); }   // LOOPS_REMOTE=1 이면 부팅 시 자동 재개
 refreshPRs(); setInterval(refreshPRs, 60000);
+setInterval(() => { pushTick().catch(e => console.error('pushTick:', e.message)); }, 20000);   // 20s마다 주의신호 diff → 폰 push
 
 // 자기 탭 기록(state/panel.dashboard.ref) — supervisor panels sweep이 "진짜 대시보드 탭"을 식별해 나머지 📊 잔재
 // (cmux 재시작 복원 셸 등)를 회수하는 근거. node --watch 재기동마다 재기록(같은 PTY라 동일 ref).
