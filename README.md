@@ -220,6 +220,10 @@ loops.env     (gitignore) 머신별 도구 경로 (install.sh 생성)
 
 이 불변은 프롬프트·스크립트 어디를 고쳐도 유지된다. 봇 에이전트·검증자는 `--disallowedTools`로 Edit/Write/Bash가 **구조적으로** 차단되고(프롬프트 규율이 아니라 도구 부재), self-update 롤백조차 로컬 브랜치 이동일 뿐 origin은 안 건드린다. 유일한 예외는 `delivery:"direct"` 루프(리뷰어 없는 개인 repo)로, PR 대신 `prBase`에 직접 push하지만 **force-push는 여전히 금지**다.
 
+## 라이선스
+
+[MIT](./LICENSE)
+
 ---
 
 *엔지니어링 내부 문서(아키텍처·규약·편집 시 주의점)는 [`CLAUDE.md`](./CLAUDE.md)를 참고.*
