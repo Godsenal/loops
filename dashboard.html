@@ -579,6 +579,40 @@ function load(){fetch('/api/status').then(function(r){return r.json();}).then(fu
 if('serviceWorker' in navigator)navigator.serviceWorker.register('/sw.js').catch(function(e){console.warn('SW 등록 실패',e);});
 navigator.serviceWorker&&navigator.serviceWorker.addEventListener('message',function(e){if(e.data&&e.data.type==='select-loop'&&e.data.loop)selectLoop(e.data.loop);});
 (function(){var dl=new URLSearchParams(location.search).get('loop');if(dl){sel=dl;localStorage.setItem('loop',dl);}})();
+/* 왼쪽 엣지 스와이프 → 사이드바 열기 / 열린 상태에서 왼쪽 스와이프 → 닫기 (모바일 기본 제스처, 손가락 따라옴) */
+(function(){
+ var side=document.getElementById('side'), bd=document.getElementById('backdrop');
+ if(!side||!bd)return;
+ var EDGE=30, sx=0, sy=0, w=300, active=false, dragging=false, tx=0, openStart=false;
+ var mobile=function(){return matchMedia('(max-width:820px)').matches;};
+ addEventListener('touchstart',function(e){
+  active=false;dragging=false;
+  if(!mobile()||e.touches.length!==1||document.querySelector('dialog[open]'))return;
+  var t=e.touches[0], open=document.body.classList.contains('nav-open');
+  if(!open && t.clientX>EDGE)return;                 // 닫힘: 왼쪽 엣지에서 시작한 것만
+  sx=t.clientX;sy=t.clientY;openStart=open;w=side.offsetWidth||300;active=true;
+ },{passive:true});
+ addEventListener('touchmove',function(e){
+  if(!active||e.touches.length!==1)return;
+  var t=e.touches[0],dx=t.clientX-sx,dy=t.clientY-sy;
+  if(!dragging){
+   if(Math.abs(dx)<10&&Math.abs(dy)<10)return;
+   if(Math.abs(dy)>Math.abs(dx)){active=false;return;} // 세로 스크롤 의도 → 제스처 포기(스크롤 허용)
+   dragging=true;side.style.transition='none';bd.style.transition='none';
+  }
+  tx=Math.max(-w,Math.min(0,(openStart?0:-w)+dx));     // 손가락 따라 드로어 이동
+  side.style.transform='translateX('+tx+'px)';
+  bd.style.opacity=((tx+w)/w).toFixed(3);              // 백드롭 딤도 진행도에 맞춰
+  e.preventDefault();                                  // 가로 드래그 중 페이지 스크롤 차단
+ },{passive:false});
+ var end=function(){
+  if(!active)return; active=false;
+  side.style.transition='';side.style.transform='';bd.style.transition='';bd.style.opacity='';
+  if(dragging){document.body.classList.toggle('nav-open', tx > -w/2);dragging=false;}  // 절반 넘으면 스냅
+ };
+ addEventListener('touchend',end,{passive:true});
+ addEventListener('touchcancel',end,{passive:true});
+})();
 load();setInterval(load,2000);
 </script>
 <script src="/vendor/oat.min.js" defer></script>
