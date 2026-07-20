@@ -152,7 +152,6 @@ loopctl start                      # 디스패처 시작
 - **범위** — `0.0.0.0`이 아니라 tailscale IP에만 바인딩 → **LAN·공개 인터넷 노출 없음**, 내 tailnet 기기에서만(TLS + WireGuard). 기존 `tailscale serve` 설정은 안 건드린다.
 - **영속** — `loops.env`의 `LOOPS_REMOTE=1`(모달·CLI가 토글) → 다음 부팅에도 자동. 끄기 `loopctl remote off`.
 - **비밀번호(선택)** — tailnet 자체가 사설 경계라 보통 불필요하지만, `LOOPS_REMOTE_AUTH="user:pass"`를 두면 비-loopback 요청에 Basic auth를 건다.
-- **공개 터널** — tailnet 밖 노출이 필요하면 `loopctl remote cloudflare`(quick tunnel + basic-auth, `cloudflared` 필요).
 
 ## 신뢰성 — 자가복구
 
@@ -186,7 +185,7 @@ Loops는 사람이 안 보는 동안에도 계속 돌도록 설계됐다. 모든
          supervisor install|remove|status|run   프로세스 감독자(launchd) 등록
 
 원격     bot                      Telegram 봇 (폰 push + 결정·취소·재실행)
-         remote [tailscale|off|cloudflare]   폰 원격 대시보드 토글
+         remote [tailscale|off]   폰 원격 대시보드 토글
 ```
 
 종료 상태 이슈의 worktree·탭·브랜치는 매 orchestrator run마다 **자동 정리**된다(진행 중 worktree는 `claude --resume` 위해 보존).
