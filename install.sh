@@ -75,6 +75,18 @@ fi
 mkdir -p "$LOOPS_HOME/loops" "$LOOPS_HOME/state"
 chmod +x "$LOOPS_HOME/loopctl" "$LOOPS_HOME/dashboard-server.mjs" "$LOOPS_HOME/bin/"*.sh "$LOOPS_HOME/bin/render-prompt.mjs" 2>/dev/null
 
+# 자동 복구: supervisor(launchd, 60s) 등록 — cmux 재시작/크래시 뒤 죽은 디스패처·대시보드·봇을 자동 재기동.
+# 새 컴퓨터에서 install.sh(palace 설치 포함)만으로 자동화가 걸리도록 여기서 배선한다. macOS 전용·멱등·실패해도 설치는 성공.
+if [[ "$(uname)" == "Darwin" ]]; then
+  if launchctl print "gui/$(id -u)/com.loops.supervisor" >/dev/null 2>&1; then
+    echo "✅ supervisor 이미 등록됨 (launchd 60s)"
+  elif "$LOOPS_HOME/loopctl" supervisor install >/dev/null 2>&1; then
+    echo "✅ supervisor 자동 등록 (launchd 60s) — 죽은 디스패처/대시보드/봇 자동 재기동"
+  else
+    echo "ℹ️  supervisor 등록 건너뜀 — 필요시 'loopctl supervisor install' 수동 실행"
+  fi
+fi
+
 echo
 echo "완료 ✅  다음 (loopctl 은 어느 디렉토리에서나 실행 가능):"
 echo "  loopctl dashboard          # 대시보드 (http://localhost:$PORT, cmux 패널)"
