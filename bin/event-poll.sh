@@ -65,6 +65,10 @@ if [[ "$ON_LNEW" == "true" && -n "$PID" && -n "${LINEAR_API_KEY:-}" ]]; then
   # Linear 응답 자체가 비면(키 만료/네트워크) 커서를 건드리지 않는다 — 다음 성공 폴링 때 전부 "신규"로 오폭하는 것 방지.
   lsout="$(LINEAR_API_KEY="${LINEAR_API_KEY:-}" node "$ROOT/bin/linear-states.mjs" "$PID" "$LABEL" 2>/dev/null)"
   if [[ -n "$lsout" ]]; then
+    # 방금 받은 상태표를 그대로 남긴다 — 대시보드가 이걸 재사용해 같은 질의를 중복하지 않는다(Linear rate-limit 절약).
+    # 소비자: dashboard-server.mjs refreshLinear(). 신선도(mtime)로만 판단하므로 형식은 linear-states.mjs 출력 그대로.
+    # 비어있을 땐 절대 안 쓴다(위 -n 가드) — 빈 파일을 "이슈 전멸"로 읽히면 표시가 통째로 뒤집힌다.
+    print -r -- "$lsout" > "$STATE/linear-states.tsv.tmp" && mv -f "$STATE/linear-states.tsv.tmp" "$STATE/linear-states.tsv"
     blist="$(print -r -- "$lsout" | awk -F'\t' '$2=="backlog"{print $1}')"
     fresh="$(print -r -- "$blist" | node -e '
       const fs=require("fs"),f=process.argv[1];let d="";

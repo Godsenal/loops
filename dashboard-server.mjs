@@ -114,6 +114,61 @@ function refreshPRs() {
   }
 }
 
+// Linear 상태 캐시 — 이슈별 statusType(backlog|unstarted|started|completed|canceled|triage)을 60초마다 백그라운드 갱신.
+// ⚠️ 왜 필요한가: 이슈 표시 상태의 "라이브" 신호가 PR(gh) 하나뿐이었다. delivery=direct 루프는 PR을 아예 안 열어
+//    live가 상시 null이고, 워커의 claude TUI는 일이 끝나도 idle 프로세스로 남아 탭(=alive)이 계속 살아있다
+//    (worker-run.sh의 종료 훅은 프로세스가 죽어야 탄다 — 검토용 탭 유지 설계). 그래서 "push+Done까지 끝난 이슈"가
+//    stale snapshot(사이클당 1회 기록) + alive 탭 조합으로 다음 사이클이 끝날 때까지 "작업중"으로 박제됐다.
+//    탭을 닫아줄 리퍼는 /tmp/loop-<id>.lockdir 점유 중엔 skip하므로(dispatch.sh:165) 사이클이 길면 그 창이 수 분+.
+//    리퍼(cleanup-terminal)가 쓰는 것과 동일한 권위 신호를 대시보드도 직접 읽어 그 창을 없앤다. 읽기 전용 — 상태 이동 없음.
+// 프로젝트+라벨 단위 1회 조회(제품 공유 프로젝트는 중복 제거). 이슈 식별자는 전역 유일이라 플랫 맵으로 충분.
+// ⚠️ Linear rate-limit(개인키 시간당 한도) 절약: on.linearNew 루프는 event-poll.sh가 이미 60초마다 같은 질의를 하고
+//    결과를 state/linear-states.tsv 로 남긴다 → 신선하면(≤LINEAR_TSV_FRESH) 그걸 재사용하고 질의를 건너뛴다.
+//    파일이 없거나(=on.linearNew 미설정) 오래됐으면(=디스패처 정지) 대시보드가 직접 조회한다 —
+//    관측 도구는 디스패처가 죽어도 살아있어야 하므로 폴백을 없애지 않는다.
+const LINEAR_TSV_FRESH = 90;   // 초. event-poll 주기(60s)보다 여유 있게.
+const linearByIssue = {};
+function ingestLinearRows(rows) { for (const r of rows) { const [id, t] = r.split('\t'); if (id && t) linearByIssue[id.toUpperCase()] = t; } }
+function refreshLinear() {
+  if (!LINEAR_KEY) return;   // 키 없음 = 조회 불가 → 캐시 손대지 않고 snapshot 폴백(cleanup-terminal과 같은 강등 경로)
+  const seen = new Set();
+  for (const lid of listLoopIds()) {
+    const cfg = loopCfg(lid); const pid = cfg.linearProjectId; if (!pid) continue;
+    const label = cfg.linearLabel || '';
+    const k = `${pid}\t${label}`; if (seen.has(k)) continue;
+    // event-poll이 방금 받아둔 게 있으면 재사용 (같은 pid+label 질의라 내용이 동일하다).
+    const tsv = `${LOOPS}/${lid}/state/linear-states.tsv`;
+    try {
+      if ((Date.now() - statSync(tsv).mtimeMs) / 1000 <= LINEAR_TSV_FRESH) {
+        const rows = readText(tsv).trim().split('\n').filter(Boolean);
+        if (rows.length) { ingestLinearRows(rows); seen.add(k); continue; }
+      }
+    } catch {}   // 파일 없음/stat 실패 = 재사용 불가 → 아래에서 직접 조회 (무음 폴백이 아니라 명시적 대체 경로)
+    seen.add(k);
+    const argv = [`${ROOT}/bin/linear-states.mjs`, pid]; if (label) argv.push(label);
+    execFile(process.execPath, argv, { env: { ...process.env, LINEAR_API_KEY: LINEAR_KEY }, timeout: 20000, maxBuffer: 8 * 1024 * 1024 }, (e, so) => {
+      const rows = String(so || '').trim().split('\n').filter(Boolean);
+      // 실패/0건(키 만료·네트워크)이면 캐시를 비우지 않는다 — 빈 응답을 "이슈 전멸"로 믿으면 표시가 통째로 뒤집힌다
+      // (리퍼의 TAB_TRUTH와 같은 원칙). 원인은 loud하게 남긴다.
+      if (e || !rows.length) { console.error(`[linear] ${pid}${label ? ' #' + label : ''} 조회 실패/0건 — 이전 캐시 유지 (${e ? e.message : 'empty'})`); return; }
+      ingestLinearRows(rows);
+    });
+  }
+}
+// snapshot의 상태명 + 라이브 Linear statusType → 권위 상태. Linear가 없으면(키 없음/미조회 이슈) snapshot 그대로.
+// statusType은 타입만 주고 이름을 안 주므로, 비종료 타입에서는 snapshot의 커스텀 상태명("Known Issue" 등)을 살린다.
+function authStateOf(lt, snapState) {
+  if (!lt) return snapState;
+  if (lt === 'completed') return 'Done';
+  if (lt === 'canceled') return 'Canceled';
+  // started 타입에는 "In Progress" 말고도 "In Review"·"Ready to Deploy" 같은 커스텀 이름이 들어있고
+  // statusType만으론 그 이름을 복원할 수 없다 → snapshot이 이미 비-Backlog/비-종료 이름이면 그대로 유지한다.
+  // (이 분기의 실제 임무는 "snapshot이 아직 Backlog/종료인데 Linear는 이미 시작됨"을 정정하는 것뿐.)
+  if (lt === 'started') return ['Backlog', 'Done', 'Canceled', 'Cancelled'].includes(snapState) ? 'In Progress' : snapState;
+  // backlog | unstarted | triage — snapshot이 진행/종료로 알고 있으면 그쪽이 뒤처진 것 → Backlog로 정정.
+  return ['In Progress', 'In Review', 'Done', 'Canceled', 'Cancelled'].includes(snapState) ? 'Backlog' : snapState;
+}
+
 function loopStatus(lid, allTabs) {
   const dir = `${LOOPS}/${lid}`, st = `${dir}/state`;
   const cfg = loopCfg(lid);
@@ -125,6 +180,7 @@ function loopStatus(lid, allTabs) {
   for (const t of allTabs) { const m = (t.title || '').match(new RegExp('(?:🛠|↩)\\s*' + lid + '\\s+(\\S+)')); if (m) tabByIssue[m[1].toUpperCase()] = t.ref; }
   const liveness = readJSON(`${st}/liveness.json`) || {};   // watchdog.sh가 쓰는 spawn-liveness 상태 {issue:{attempts,escalated,...}}
   const rework = readJSON(`${st}/rework.json`) || {};       // rework-worker.sh가 쓰는 리뷰 재작업 상태 {issue:{count,lastAt,exhausted}}
+  const orchRunning = existsSync(`/tmp/loop-${lid}.lockdir`);   // run 진행 중 — 아래 stalled 판정의 억제 조건(팬아웃 과도기)
   const issues = (snap?.issues || []).map(i => {
     const live = prByBranch[branchOf(cfg, lid, i.id)] || null;
     const ws = tabByIssue[i.id] || null, alive = !!ws;
@@ -138,16 +194,22 @@ function loopStatus(lid, allTabs) {
     const gateResolved = i.flag === 'human-gate' && existsSync(`${st}/decisions/${i.id}.md`);
     const verify = readJSON(`${st}/verify/${i.id}.json`);   // 검증자(verifier) verdict {verdict,ts,summary} — verify 켜진 루프만 존재
     const validate = readJSON(`${st}/validate/${i.id}.json`);   // 제안 검증자(validator) verdict {verdict,ts,summary,ask_note,alternative} — validate 켜진 제안형 루프만 존재
-    // 표시 상태 = 라이브 신호(PR + 탭) 우선. snapshot은 시간당 1회라 뒤처지므로 보조로만.
-    let state = i.state, working = false;
+    // 표시 상태 = 라이브 신호(PR + Linear + 탭) 우선. snapshot은 사이클당 1회라 뒤처지므로 보조로만.
+    // authState = snapshot을 라이브 Linear로 정정한 상태. direct 모드엔 PR이 없어 이게 유일한 완료 신호다.
+    const authState = authStateOf(linearByIssue[String(i.id).toUpperCase()] || null, i.state);
+    let state = authState, working = false;
     if (live && live.merged) state = 'Done';
     else if (live && live.state === 'OPEN') state = 'In Review';
-    else if (live && live.state === 'CLOSED') state = (i.state === 'Done' || i.state === 'Canceled') ? i.state : 'In Review';  // 닫힘=정리 대상 → In Review 버킷 + pr-closed 플래그로 표시
-    else if (!live && alive && i.state !== 'Done' && i.state !== 'Canceled') { state = 'In Progress'; working = true; }  // PR 아직 없고 탭 살아있음 = 진짜 작업중
-    // 박제 감지: snapshot은 In Progress인데 라이브 탭도 PR도 없음 = 죽었거나 완료 후 탭이 닫힌 worker (이미 계산된 alive/live만 조합, 신규 IO 없음). direct 모드는 PR이 상시 null이라 특히 필요.
-    const stalled = i.state === 'In Progress' && !alive && !live;
+    else if (live && live.state === 'CLOSED') state = (authState === 'Done' || authState === 'Canceled') ? authState : 'In Review';  // 닫힘=정리 대상 → In Review 버킷 + pr-closed 플래그로 표시
+    else if (!live && alive && authState !== 'Done' && authState !== 'Canceled') { state = 'In Progress'; working = true; }  // PR도 없고 Linear도 미완인데 탭 살아있음 = 진짜 작업중
+    // 박제 감지: 권위 상태는 In Progress인데 라이브 탭도 PR도 없음 = 죽었거나 완료 후 탭이 닫힌 worker (이미 계산된 alive/live만 조합, 신규 IO 없음). direct 모드는 PR이 상시 null이라 특히 필요.
+    // ⚠️ run 진행 중(lockdir)엔 억제한다: 오케스트레이터 팬아웃은 **spawn 전에** Linear를 In Progress로 옮기므로
+    //    (spawn-worker.sh:45 주석 참조 — resolve-gate/start-issue 경로만 spawn 후 이동) 탭이 뜨기까지 수 초~수십 초 동안
+    //    "started인데 탭 없음"이 정상적으로 존재한다. 라이브 Linear를 근거로 쓰면서 이걸 안 막으면 팬아웃마다
+    //    stalled-worker 오탐이 뜨고 pushTick이 폰 알림까지 쏜다. 워치독·리퍼도 같은 이유로 lockdir 중엔 skip한다(동일 정책).
+    const stalled = authState === 'In Progress' && !alive && !live && !orchRunning;
     return {
-      ...i, state, snapState: i.state, pr: (live && live.url) || i.pr || null,
+      ...i, state, snapState: i.state, linearState: authState, pr: (live && live.url) || i.pr || null,
       workspace: ws, alive, working, stalled, hasWorktree: existsSync(wtPath(cfg, i.id)),
       merged: live ? live.merged : undefined, prState: live ? live.state : undefined, checks: live ? live.checks : undefined,
       ci: live ? live.ci : undefined, review: live ? live.review : undefined, reviewCount: live ? live.reviewCount : undefined,
@@ -180,10 +242,11 @@ function loopStatus(lid, allTabs) {
     // 오케스트레이터가 인프라 wedge(cmux spawn 실패 등)로 사이클을 못 돌 때 snapshot에 남기는 {reason,streak} — UI 배너로 표출.
     blocked: snap?.blocked || null,
     attentionCount: issues.filter(i => i.attention).length,
-    // "정리 필요" = Linear(snapshot)는 아직 In Review인데 PR은 이미 머지/닫힘 → reconcile 유도
-    mergedInReview: issues.filter(i => i.snapState === 'In Review' && i.merged).length,
-    closedInReview: issues.filter(i => i.snapState === 'In Review' && i.prState === 'CLOSED' && !i.merged).length,
-    orchRunning: existsSync(`/tmp/loop-${lid}.lockdir`),
+    // "정리 필요" = Linear는 아직 In Review인데 PR은 이미 머지/닫힘 → reconcile 유도.
+    // 판정 근거는 라이브 Linear(linearState) — snapshot으로 보면 이미 Done으로 옮겨간 이슈까지 정리 필요로 오표시된다.
+    mergedInReview: issues.filter(i => i.linearState === 'In Review' && i.merged).length,
+    closedInReview: issues.filter(i => i.linearState === 'In Review' && i.prState === 'CLOSED' && !i.merged).length,
+    orchRunning,
   };
 }
 function status() {
@@ -385,6 +448,7 @@ async function control(a, p) {
       if (!key) return { ok: false, out: '키가 비었음' };
       LINEAR_KEY = key;
       try { setEnvVar(ROOT, 'LINEAR_API_KEY', key); } catch (e) { return { ok: false, out: 'loops.env 저장 실패: ' + e.message }; }
+      refreshLinear();   // 키가 없어 비어있던 라이브 Linear 캐시를 즉시 채운다(다음 60s 틱까지 기다리지 않음)
       return { ok: true, out: 'Linear 키 저장됨 (즉시 적용 · 재시작 불필요)' };
     }
     case 'set-telegram': {   // UI에서 Telegram 봇 토큰 입력 → loops.env 영속화 (값은 되돌려주지 않음). chat-id는 봇이 첫 메시지에서 자동 페어링.
@@ -788,6 +852,7 @@ const server = http.createServer(handler);
 server.listen(PORT, '127.0.0.1', () => console.log(`Loops dashboard → http://localhost:${PORT}`));
 if (remoteWanted) { const r = openRemote(); console.log(r.ok ? `Loops dashboard 원격(폰) → ${r.url}` : `Loops dashboard 원격 자동기동 실패: ${r.out}`); }   // LOOPS_REMOTE=1 이면 부팅 시 자동 재개
 refreshPRs(); setInterval(refreshPRs, 60000);
+refreshLinear(); setInterval(refreshLinear, 60000);   // 라이브 Linear 상태(리퍼와 동일한 권위 신호) — direct 모드의 유일한 완료 신호
 setInterval(() => { pushTick().catch(e => console.error('pushTick:', e.message)); }, 20000);   // 20s마다 주의신호 diff → 폰 push
 
 // 자기 탭 기록(state/panel.dashboard.ref) — supervisor panels sweep이 "진짜 대시보드 탭"을 식별해 나머지 📊 잔재
