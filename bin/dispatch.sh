@@ -155,15 +155,19 @@ while true; do
 
   # ── reaper: 종료/고아 worker 탭을 orchestrator 스케줄과 독립으로 즉시(≤60s) 회수. ──
   # cmux 소켓 접근이 필요해 이 디스패처 루프(=cmux 패널 안)에서 돈다. PAUSED와 무관한 housekeeping이라 위 가드 밖.
-  # 진행 중 run(lockdir)은 스킵 — 그 run이 끝에 스스로 cleanup-terminal 하므로 중복/레이스 방지. 무동작 reap은 CLEANUP_QUIET로 조용히.
+  # 진행 중 run(lockdir)이면 **종료 이슈 정리만**(CLEANUP_TERMINAL_ONLY) — 통째로 스킵하지 않는다.
+  #   통째 스킵은 "사이클 < interval"을 가정했는데, 사이클이 interval보다 긴 루프(예: intervalSec=120 · 사이클 8~10분)는
+  #   lockdir이 상시 점유돼 리퍼가 영영 안 돌았다 → 완료된 이슈의 탭·worktree가 사이클 끝까지 쌓인다(자가복구 계층 아사).
+  #   종료 이슈는 fan-out 대상이 아니라 run 중에도 레이스가 없다. 유령/잔재 회수(레이스 실재)는 lockdir이 풀린 뒤에만.
+  # 무동작 reap은 CLEANUP_QUIET로 조용히.
   now=$(date +%s); lastreap=$(cat "$STATE/.last_reap" 2>/dev/null || echo 0)
   if (( now - lastreap >= 60 )); then
     echo "$now" > "$STATE/.last_reap"
     for CFG in $ROOT/loops/*/config.json(N); do
       [[ -f "$CFG" ]] || continue
       lid="$(field "$CFG" id)"; [[ -z "$lid" ]] && continue
-      [[ -d /tmp/loop-$lid.lockdir ]] && continue
-      CLEANUP_QUIET=1 "$ROOT/bin/cleanup-terminal.sh" "$lid" >> "$ROOT/loops/$lid/state/run.log" 2>&1
+      tonly=""; [[ -d /tmp/loop-$lid.lockdir ]] && tonly=1
+      CLEANUP_QUIET=1 CLEANUP_TERMINAL_ONLY="$tonly" "$ROOT/bin/cleanup-terminal.sh" "$lid" >> "$ROOT/loops/$lid/state/run.log" 2>&1
     done
   fi
 

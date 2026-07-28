@@ -12,6 +12,14 @@
 #   • Backlog 잔재 worktree(죽은 worker가 되돌려진 뒤 방치, 탭·PR 없음) → cleanup-issue로 worktree+브랜치 회수.
 # ⚠️ Backlog 이동은 머지/취소가 아니다 — no-merge/no-cancel 원칙 불변. force-push/배포 없음.
 # usage: cleanup-terminal.sh <loop-id>   (env: CLEANUP_DRY_RUN=1 → 삭제/이동 없이 대상만 출력)
+# env CLEANUP_TERMINAL_ONLY=1 → **종료 이슈 정리만** 하고 유령 회수(4)·Backlog 잔재 회수(5)·검증탭 회수(6)·고아 탭 닫기는 건너뛴다.
+#   왜: dispatch.sh의 60s 리퍼는 run 진행 중(lockdir)인 루프를 통째로 skip했다. 그런데 사이클이 interval보다 긴 루프
+#   (예: intervalSec=120인데 사이클 8~10분)는 lockdir이 사실상 상시 점유돼 리퍼가 **영영 안 돈다** → 완료된 이슈의
+#   탭·worktree가 사이클이 끝날 때까지 쌓인다("완료됐는데 작업중으로 보임"의 물리적 근원).
+#   종료(completed/canceled) 이슈는 오케스트레이터의 fan-out 대상이 아니므로 그 정리만은 run 중에도 레이스가 없다.
+#   반대로 4·5는 **레이스가 실재한다**: 오케스트레이터는 spawn *전에* Linear를 In Progress로 옮기므로(spawn-worker.sh:45 주석)
+#   그 창에서 "started인데 탭·worktree 없음"이 정상적으로 존재한다 → 유령으로 오판해 Backlog로 되돌리면 팬아웃을 취소시킨다.
+#   그래서 4·5·6과 고아 탭 닫기는 lockdir이 풀린 뒤(=이 플래그 없이 호출될 때)만 돈다.
 set -u
 source "${0:A:h}/_common.sh"
 LOOP="${1:?usage: cleanup-terminal.sh <loop-id>}"
@@ -114,6 +122,8 @@ for sl in $ALLSLUGS; do
   if [[ -n "${TERMINAL[$sl]:-}" ]]; then
     # 종료 → 풀 정리(탭+worktree+브랜치). worktree 없어도 cleanup-issue가 남은 탭을 닫는다.
     if [[ -n "${CLEANUP_DRY_RUN:-}" ]]; then echo "  [dry-run] terminal → clean $id (${PREFIX}-$sl)"; else "$ROOT/bin/cleanup-issue.sh" "$LOOP" "$id"; fi
+  elif [[ -n "${CLEANUP_TERMINAL_ONLY:-}" ]]; then
+    continue   # run 중 호출 — 종료 이슈만 정리한다(위 분기). 비종료 판정은 팬아웃 과도기와 구분이 안 돼 보류.
   elif [[ -z "${WT_EXISTS[$sl]:-}" && -n "${TAB_REFS[$sl]:-}" ]]; then
     # 비종료인데 worktree 소멸 + 탭 잔존 → 죽은 고아 탭. cwd가 사라져 resume 불가하므로 탭만 닫음(브랜치는 보존).
     if [[ -n "${CLEANUP_DRY_RUN:-}" ]]; then
@@ -130,7 +140,7 @@ done
 # ⚠️ 아래 4)·5)는 Linear 상태를 바꾸거나(=4, Backlog 이동) worktree를 지운다(=5) → Linear가 신선(linear_n>0)할 때만.
 #    snapshot 폴백(만료/오프라인)일 땐 오판 위험이 커서 아예 건너뛴다(보수적). lockdir 게이트가 spawn 레이스도 막는다.
 #    + TAB_TRUTH: 둘 다 "live 탭 없음"을 veto 해제 증거로 쓰므로, cmux 플레이크(빈 목록)면 산 워커를 유령/잔재로 오판한다 — skip.
-if (( linear_n > 0 && TAB_TRUTH )); then
+if (( linear_n > 0 && TAB_TRUTH )) && [[ -z "${CLEANUP_TERMINAL_ONLY:-}" ]]; then
   # 4) started 유령 회수 — Linear started인데 worktree·worker 탭·PR(any state) 전부 없음 = 진행분 없이 in-flight 슬롯만 붙잡는 유령.
   #    linear-move로 Backlog 복귀 → 슬롯 해제 → orchestrator가 cap·우선순위 안에서 재spawn. (watchdog이 spawn 대신 리퍼로 넘긴 케이스.)
   #    escalated(사람 대기)는 건너뜀 — 사람이 볼 stuck을 리셋하지 않게. 머지/취소 아님(Backlog 이동만) — no-merge 원칙 불변.
@@ -161,7 +171,7 @@ fi
 #    탭만 · watchdog=🛠 워커 pidfile만 — 검증 탭은 사각). validator/verifier-run이 시작 시 남기는 pidfile로 생존을 판별해
 #    "죽은 것"만 탭 close + worktree 제거한다. 실행 중(pidfile 생존)·방금 스폰(🧪 타이틀+pidfile 부재)은 보수적 보존.
 #    탭·worktree 정리뿐 — Linear 이동/머지/force-push 없음. cleanup-issue와 겹쳐도 remove는 멱등.
-if [[ -n "$CMUX" && $TAB_TRUTH -eq 1 ]]; then
+if [[ -n "$CMUX" && $TAB_TRUTH -eq 1 && -z "${CLEANUP_TERMINAL_ONLY:-}" ]]; then
   PFXBASE="${PREFIX:t}"
   # 살아있는 검증 pidfile의 슬러그 집합 — worktree·맨셸 회수의 veto(cmux 스폰 실패 시 탭 없이 도는 headless 폴백 실행 보호).
   typeset -A VV_LIVE

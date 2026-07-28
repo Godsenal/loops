@@ -482,7 +482,19 @@ async function control(a, p) {
     case 'run-retro': { if (!lid) return { ok: false, out: 'no loop' }; if (existsSync(`/tmp/loop-${lid}.lockdir`)) return { ok: false, out: '⏳ orchestrator 실행 중 — 끝난 뒤 다시 누르세요.' }; spawn(`${ROOT}/bin/spawn-orchestrator.sh`, [lid, 'retro'], { stdio: 'ignore' }); return { ok: true, out: lid + ' 🧠 retro 분석 시작 (learnings.md 갱신, ~수분)' }; }
     case 'save-config': {
       if (!lid) return { ok: false }; const cfg = readJSON(cfgPath(lid)) || {};
-      for (const k of ['name', 'emoji', 'repo', 'linearProjectId', 'linearProjectUrl', 'orchestratorWorktree', 'worktreePrefix', 'branchPrefix', 'baseRef', 'prBase', 'claudeCmd']) if (p[k] !== undefined) cfg[k] = p[k];
+      // ⚠️ 빈 문자열은 **절대 저장하지 않는다** — 키를 지운다. 제품 상속(mergeProduct)은 `cfg[k] == null`일 때만
+      //    걸리므로 ""를 쓰면 상속이 영구히 막혀 repo/baseRef가 빈 채로 굳고, 워커 spawn이
+      //    `fatal: not a valid object name: 'origin/develop'`로 죽는다. /api/config는 **raw** config를 돌려주므로
+      //    제품 상속 필드(repo·baseRef·prBase·claudeCmd·linearProject*)는 모달에 빈 칸으로 뜨고, 사용자가 다른 항목만
+      //    고쳐 저장해도 그 빈 칸들이 ""로 함께 기록됐다 — 이 사고가 실제로 2번 재발했다(오케스트레이터가 매번 손으로 되돌림).
+      //    나머지 키(name·emoji·branchPrefix·worktree*)도 코드에 기본값이 있어 삭제가 ""보다 항상 옳다.
+      //    ⚠️ 여기서 굳이 effective(상속 반영) 값을 채워 넣지 않는 이유: 그러면 제품 값이 루프 config에 복사돼
+      //    이후 제품 설정을 바꿔도 이 루프만 옛 값에 고정된다(상속의 의미가 사라짐).
+      for (const k of ['name', 'emoji', 'repo', 'linearProjectId', 'linearProjectUrl', 'orchestratorWorktree', 'worktreePrefix', 'branchPrefix', 'baseRef', 'prBase', 'claudeCmd']) {
+        if (p[k] === undefined) continue;
+        const v = typeof p[k] === 'string' ? p[k].trim() : p[k];
+        if (v === '' || v == null) delete cfg[k]; else cfg[k] = v;
+      }
       // product·linearLabel: 빈 값이면 키 자체를 지운다 — cfg.product=""는 상속도 안 되면서 파일만 오염.
       for (const k of ['product', 'linearLabel']) if (p[k] !== undefined) { const v = String(p[k]).trim(); if (v) cfg[k] = v; else delete cfg[k]; }
       if (p.delivery === 'pr' || p.delivery === 'direct') cfg.delivery = p.delivery;   // 배달 방식(enum) — 유효값만 기록(no silent fallback)
@@ -696,7 +708,14 @@ function handler(req, res) {
   }
   if (req.method === 'GET' && u.pathname === '/api/session') { res.writeHead(200, { 'content-type': 'text/plain; charset=utf-8' }); res.end(sessionText(u)); return; }
   if (req.method === 'GET' && u.pathname === '/api/mission') { res.writeHead(200, { 'content-type': 'text/plain; charset=utf-8' }); res.end(promptText(u)); return; }
-  if (req.method === 'GET' && u.pathname === '/api/config') { const lid = u.searchParams.get('loop'); res.writeHead(200, { 'content-type': 'application/json' }); res.end(JSON.stringify(readJSON(cfgPath(lid)) || {}, null, 2)); return; }
+  // ?effective=1 → 제품 상속까지 반영한 값(모달의 placeholder 전용 — 저장되는 값이 아니다).
+  // 기본(raw)은 그대로 유지: 저장 폼이 effective를 실제 value로 들고 있으면 제품 값이 루프 config에 복사돼 상속이 끊긴다.
+  if (req.method === 'GET' && u.pathname === '/api/config') {
+    const lid = u.searchParams.get('loop'); const raw = readJSON(cfgPath(lid)) || {};
+    let out = raw;
+    if (u.searchParams.get('effective') === '1') { try { out = mergeProduct(ROOT, JSON.parse(JSON.stringify(raw))); } catch { out = raw; } }
+    res.writeHead(200, { 'content-type': 'application/json' }); res.end(JSON.stringify(out, null, 2)); return;
+  }
   if (req.method === 'GET' && u.pathname === '/api/remote') {   // 원격 모달용 라이브 상태(tailscale CLI 조회 포함 — status()와 달리 매 폴링엔 안 씀)
     const info = tailscaleInfo(); const url = remoteUrl || computeRemoteUrl(info);
     res.writeHead(200, { 'content-type': 'application/json' });
