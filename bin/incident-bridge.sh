@@ -12,6 +12,9 @@
 #   auth/quota abort(주간 한도 소진·로그아웃 등, ACCOUNT_ABORT_RE) — claude가 못 도는 **계정 상태**라 엔진에 고칠
 #   코드가 없다(같은 부류). run.log tail이 이 시그니처면 cycle-error 발제만 건너뛴다(스트릭·커서는 불변 →
 #   시그니처가 사라진 뒤의 진짜 연속 실패는 정상 발제).
+#   ⚠️ "발제 안 함" ≠ "안 알림": 계정이 막히면 전 루프가 동시에 멈추는 전면 장애인데 이슈도 배너도 안 뜬다.
+#   그래서 패스 0(account_alert)이 **아래 발제 게이트보다 앞에서** Telegram 알림만 따로 보낸다 — 엔진 루프가
+#   disabled 라 스크립트가 통째로 exit 0 이던 구성에서 계정 한도로 4일간 무성 정지한 실측이 근거다.
 #
 # 폭주 방지: ① 시그니처 dedup — cycle-error는 "성공 run으로 스트릭이 리셋되기 전까지 1회"(filed 플래그),
 #   supervisor 이벤트는 시그니처당 쿨다운(기본 86400s). ② 전역 일일 캡 LOOPS_INCIDENT_DAILY_MAX(3) — 초과분은
@@ -32,19 +35,6 @@ SUP_COOLDOWN=${LOOPS_INCIDENT_COOLDOWN:-86400}
 # rate limit을 abort가 아니라 재시도로 처리). 아래는 전부 claude 바이너리·run.log 실측으로 확인된 문구.
 ACCOUNT_ABORT_RE='hit your weekly limit|usage limit reached|Not logged in|Please run /login|Invalid API key|Credit balance is too low'
 now=$(date +%s); today="$(date '+%F')"
-
-[[ -n "${LINEAR_API_KEY:-}" ]] || exit 0   # 발제 채널 미개통 — 스킵(주석의 미설정 정책)
-
-# 엔진 자가개선 루프 탐지: repo가 이 플랫폼 레포(LOOPS_HOME) 자신인 첫 enabled 루프.
-engine=""; engine_pid=""
-for CFG in $ROOT/loops/*/config.json(N); do
-  [[ -f "$CFG" ]] || continue
-  r="$(cfgval "$CFG" repo 2>/dev/null)"; [[ -z "$r" ]] && continue
-  [[ "${r:A}" == "${ROOT:A}" ]] || continue
-  [[ "$(cfgval "$CFG" enabled 2>/dev/null)" == "false" ]] && continue
-  engine="$(cfgval "$CFG" id 2>/dev/null)"; engine_pid="$(cfgval "$CFG" linearProjectId 2>/dev/null)"; break
-done
-[[ -z "$engine" || -z "$engine_pid" ]] && exit 0   # 엔진 루프 없음 — 발제할 곳이 없다(미개통 정책)
 
 # ── incidents.json 헬퍼 (liveness.json과 동일 패턴) ──
 inc_get(){ node -e 'const fs=require("fs"),[f,p]=process.argv.slice(1);let o={};try{o=JSON.parse(fs.readFileSync(f))}catch{}const v=p.split(".").reduce((a,k)=>a&&a[k],o);process.stdout.write(v==null?"":String(v))' "$INC" "$1"; }
@@ -73,6 +63,65 @@ file_incident(){
   return 0
 }
 
+# account_alert <logtail> <loop-id> — 계정 상태(auth/quota)로 사이클이 즉시 죽을 때의 사람 알림.
+# 이슈는 만들지 않는다(엔진에 고칠 코드가 없음 — 위 정책 그대로). 대신 계정이 막히면 전 루프가 같이
+# 멈추므로, **루프별이 아니라 전역으로** 한 번만 알린다(7개 루프 × 알림 = 스팸 방지). 같은 시그니처는
+# LOOPS_ACCOUNT_ALERT_GAP(기본 6h) 간격으로 재알림 — 한도 해제까지 며칠이 걸리는 신호라 1회성이면 묻힌다.
+# 시그니처는 claude가 낸 문구 그 줄(리셋 시각 포함)이라 계정이 바뀌거나 리셋되면 자동으로 새 알림이 된다.
+account_alert(){
+  local logtail="$1" lid="$2" msg last gap=${LOOPS_ACCOUNT_ALERT_GAP:-21600}
+  # 매칭된 마지막 줄만 뽑아 시그니처로 쓴다(run.log는 여러 사이클치가 쌓여 있음).
+  #   • 전체를 괄호로 묶는다 — ERE 교체에서 `RE.*` 는 `.*` 가 **마지막 대안에만** 붙는다.
+  #   • claude 문구 뒤에는 개행 없이 엔진의 `[YYYY-MM-DD HH:MM:SS] =====` 배너가 곧장 이어붙는다.
+  #     그대로 두면 시그니처가 매 사이클 달라져 아래 간격 제한이 통째로 무력화되므로 잘라낸다.
+  msg="$(print -r -- "$logtail" | grep -aoE "($ACCOUNT_ABORT_RE).*" | tail -1 | sed -E 's/\[[0-9]{4}-[0-9]{2}-[0-9]{2}.*$//; s/[[:space:]]+$//')"
+  [[ -z "$msg" ]] && return 0
+  last="$(inc_get "account.last")"; [[ "$last" == <-> ]] || last=0
+  [[ "$(inc_get 'account.sig')" == "$msg" ]] && (( now - last < gap )) && return 0
+  inc_merge account "{\"sig\":$(print -rn -- "$msg" | node -e 'let s="";process.stdin.on("data",c=>s+=c).on("end",()=>process.stdout.write(JSON.stringify(s)))'),\"last\":$now}"
+  echo "[$(date '+%F %T')] 📣 계정 상태 알림 전송: $msg"
+  node "$ROOT/bin/tg-notify.mjs" "🚫 Claude 계정 상태로 loop이 멈춰 있습니다 (엔진 결함 아님 — 이슈 발제 안 함).
+$msg
+
+최초 감지 루프: $lid — 계정을 공유하므로 다른 루프도 같이 멈춥니다.
+조치: 다른 계정으로 전환하거나(products/*/product.json 의 claudeCmd) 라운드로빈 대상 확인 — cstat / con N" 2>&1 | grep -v '미설정' || true
+}
+
+# ── 0) 계정 상태 알림 — 아래 발제 게이트(Linear 키·엔진 루프)보다 **앞에** 둔다 ──
+# 이 패스는 이슈를 만들지 않으므로 발제 채널이 미개통이어도 동작해야 한다. 실제로 엔진 루프가
+# disabled 이면 이 스크립트는 통째로 exit 0 이었고, 그래서 계정 한도로 전 루프가 멈춘 4일 동안
+# 아무 신호도 안 나갔다 — 알림을 발제 게이트 뒤에 두면 "가장 필요할 때 안 오는" 채널이 된다.
+# 스트릭이 아니라 **현재 상태**로 판정한다(마지막 run이 실패 + tail에 계정 시그니처). 전역 1회.
+ACCOUNT_MAXAGE=${LOOPS_ACCOUNT_ALERT_MAXAGE:-14400}
+for CFG in $ROOT/loops/*/config.json(N); do
+  [[ -f "$CFG" ]] || continue
+  lid="$(cfgval "$CFG" id 2>/dev/null)"; [[ -z "$lid" ]] && continue
+  [[ "$(cfgval "$CFG" enabled 2>/dev/null)" == "false" ]] && continue
+  lstate="$ROOT/loops/$lid/state"
+  [[ -f "$lstate/PAUSED" ]] && continue
+  ec="$(cat "$lstate/.last_run_exit" 2>/dev/null)"; dt="$(cat "$lstate/.last_run_done" 2>/dev/null)"
+  [[ "$ec" == <-> && "$ec" != 0 && "$dt" == <-> ]] || continue
+  # 오래된 시체로 영원히 알리지 않게 — 디스패처가 실제로 돌며 실패 중일 때만(최근 run).
+  (( now - dt <= ACCOUNT_MAXAGE )) || continue
+  logtail="$(tail -60 "$lstate/run.log" 2>/dev/null)"
+  print -r -- "$logtail" | grep -aqE "$ACCOUNT_ABORT_RE" || continue
+  account_alert "$logtail" "$lid"
+  break   # 계정은 전 루프 공용 — 첫 감지 1건만 알린다(루프 수만큼 스팸 방지)
+done
+
+[[ -n "${LINEAR_API_KEY:-}" ]] || exit 0   # 발제 채널 미개통 — 스킵(주석의 미설정 정책)
+
+# 엔진 자가개선 루프 탐지: repo가 이 플랫폼 레포(LOOPS_HOME) 자신인 첫 enabled 루프.
+engine=""; engine_pid=""
+for CFG in $ROOT/loops/*/config.json(N); do
+  [[ -f "$CFG" ]] || continue
+  r="$(cfgval "$CFG" repo 2>/dev/null)"; [[ -z "$r" ]] && continue
+  [[ "${r:A}" == "${ROOT:A}" ]] || continue
+  [[ "$(cfgval "$CFG" enabled 2>/dev/null)" == "false" ]] && continue
+  engine="$(cfgval "$CFG" id 2>/dev/null)"; engine_pid="$(cfgval "$CFG" linearProjectId 2>/dev/null)"; break
+done
+[[ -z "$engine" || -z "$engine_pid" ]] && exit 0   # 엔진 루프 없음 — 발제할 곳이 없다(미개통 정책)
+
 # ── A) 사이클 연속 실패 — 루프별 .last_run_done 커서로 "새 run 종료"만 집계(폴링 중복 없음) ──
 for CFG in $ROOT/loops/*/config.json(N); do
   [[ -f "$CFG" ]] || continue
@@ -98,6 +147,7 @@ for CFG in $ROOT/loops/*/config.json(N); do
     # (run.log는 백그라운드 orchestrator가 동시 append하므로 두 번 읽으면 대조본≠증거본이 될 수 있다).
     logtail="$(tail -60 "$lstate/run.log" 2>/dev/null)"
     # 계정-abort 억제(주석의 auth/quota 미발제 정책) — filed를 안 세우므로 이 발제만 건너뛴다.
+    # 사람 알림은 위 패스 0이 이미 (발제 게이트와 무관하게) 담당하므로 여기서는 억제만 한다.
     if print -r -- "$logtail" | grep -aqE "$ACCOUNT_ABORT_RE"; then
       echo "[$(date '+%F %T')] 💤 incident 억제(계정 상태 auth/quota, 엔진 결함 아님): $lid 연속 ${streak}회 실패 (exit $ec)"
       continue
