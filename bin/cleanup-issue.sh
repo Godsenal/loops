@@ -20,9 +20,28 @@ did=0
 # 1. cmux 워크스페이스 닫기. ref(workspace:N)는 불안정 → 제목으로 매칭(대시보드 tabByIssue 패턴과 동일).
 #    워커 🛠·resume ↩·종료마킹 ⏹ + 검증 탭 🧪(validator)·🔎(verifier)까지. ID 뒤는 공백/줄끝 경계 → LIN-12가 LIN-123을 오매칭 안 하게.
 #    (🧪/🔎는 각 run이 EXIT 트랩으로 자가 정리하지만, 트랩 없이 죽은 라이브 타이틀 탭의 2중 안전망 — vv-리퍼가 상시 걷지만 여기서도 확실히.)
+#    ⚠️ TAB_TRUTH: cmux list-workspaces는 간헐적으로 **빈 응답**을 준다(RPC 플레이크 — 정상 응답 사이에 수 초간
+#    빈 응답 버스트가 실측된다). 빈 목록을 "닫을 탭 없음"으로 믿으면 worktree·브랜치만 지우고 탭은 영구히 남는데,
+#    worktree가 사라진 뒤라 리퍼의 "종료 이슈" 분기가 탭을 못 찾으면 아무도 회수하지 않는다
+#    → "머지됐는데 cmux 탭이 안 닫힘"의 근원. cleanup-terminal.sh는 같은 이유로 TAB_TRUTH 가드를 갖고 있는데
+#    여기엔 없어서 조용히 실패했다. 재시도하고, 그래도 비면 **loud하게** 남긴다(무음 실패 금지).
+tabs=""
 if [[ -n "$CMUX" ]]; then
-  refs="$("$CMUX" list-workspaces 2>/dev/null | grep -iE "(🛠|↩|⏹|🧪|🔎)[[:space:]]+${LOOP}[[:space:]]+${ID}([[:space:]]|\$)" | grep -oE 'workspace:[0-9]+')"
-  for r in ${(f)refs}; do "$CMUX" close-workspace --workspace "$r" >/dev/null 2>&1 && did=1; done
+  for _try in 1 2 3; do
+    tabs="$("$CMUX" list-workspaces 2>/dev/null)"
+    [[ -n "$tabs" ]] && break
+    sleep 1
+  done
+  if [[ -z "$tabs" ]]; then
+    echo "⚠️ cleanup-issue $LOOP/$ID — cmux list-workspaces 3회 연속 빈 응답(플레이크) → 탭 닫기 skip. worktree/브랜치는 정리하고, 탭은 다음 리퍼 패스가 회수한다."
+  else
+    refs="$(print -r -- "$tabs" | grep -iE "(🛠|↩|⏹|🧪|🔎)[[:space:]]+${LOOP}[[:space:]]+${ID}([[:space:]]|\$)" | grep -oE 'workspace:[0-9]+')"
+    # close 실패도 조용히 넘기지 않는다 — 실패를 삼키면 위와 똑같이 탭만 남는다.
+    for r in ${(f)refs}; do
+      if "$CMUX" close-workspace --workspace "$r" >/dev/null 2>&1; then did=1
+      else echo "⚠️ cleanup-issue $LOOP/$ID — close-workspace $r 실패 → 다음 리퍼 패스가 재시도한다."; fi
+    done
+  fi
 fi
 # 상주 monitor를 close-workspace로 죽이면 worker-run의 on_exit trap이 못 탈 수 있다 → stale pidfile 직접 걷기(멱등).
 # 워커(live)·validator(validate)·verifier(verify) pidfile 모두 — 탭을 강제로 닫으면 트랩이 못 지운 잔재가 남을 수 있다.
