@@ -244,6 +244,25 @@ sweep_panels(){
 }
 [[ "$SCOPE" == "panels" ]] && sweep_panels
 
+# ── 1.6) 유령 탭 sweep (panels 스코프 전용) ──
+# 위 sweep_panels를 포함해 엔진의 모든 회수 경로는 타이틀 정규식(🛠|↩|🔎|🧪|🔁|📊|🤖)에 걸려 있다. 그런데 cmux가
+# 부하를 받으면 create/rename RPC가 타임아웃해 **이름조차 못 받은 탭**이 남고(실측 2회: 93개·66개, spawn-failed와 1:1),
+# 그런 탭은 어떤 리퍼에도 안 걸려 무한 적재된다 — 탭이 늘수록 cmux가 느려져 타임아웃이 더 잦아지는 폭주 루프.
+# spawn-panel이 생성 실패 시 diff로 회수하도록 고쳤지만(11b5f40) 그 회수도 같은 RPC를 타므로 부하가 심하면 또 샌다.
+# 여기서 "누가 흘렸든 주기적으로 걷는다" — 타이틀에 의존하지 않는 유일한 리퍼. 판정·안전장치는 phantom-sweep.mjs 헤더 참조
+# (커스텀 타이틀 없음 + 루프 worktree cwd + 대화 없음 + PTY 없음 + 워커 pid 죽음 + 연속 2회 관찰). 탭 close 외 부작용 없음.
+sweep_phantoms(){
+  [[ -z "$CMUX_BIN" ]] && return 0
+  local out n
+  out="$(CMUX_BIN="$CMUX_BIN" LOOPS_HOME="$ROOT" node "$ROOT/bin/phantom-sweep.mjs" 2>&1)"
+  [[ -z "$out" ]] && return 0
+  print -r -- "$out" | while IFS= read -r l; do print -r -- "[$(date '+%F %T')] 🧹 $l"; done
+  n="$(print -r -- "$out" | grep -c '유령 탭 .* 회수')"
+  (( n > 0 )) && event phantom-swept panels "이름 없는 유령 탭 ${n}개 회수"
+  return 0
+}
+[[ "$SCOPE" == "panels" ]] && sweep_phantoms
+
 # ── 2) dashboard (panels 스코프 전용 — 디스패처의 PTY 컨텍스트에서만 spawn이 확실. opt-out: LOOPS_SUPERVISE_DASHBOARD=0) ──
 if [[ "$SCOPE" == "panels" && "${LOOPS_SUPERVISE_DASHBOARD:-1}" != "0" ]]; then
   if ! curl -s -o /dev/null --max-time 3 "http://localhost:$PORT/" 2>/dev/null; then
