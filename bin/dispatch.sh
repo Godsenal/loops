@@ -112,6 +112,10 @@ while true; do
         [[ -f "$CFG" ]] || continue
         lid="$(field "$CFG" id)"; [[ -z "$lid" ]] && continue
         "$ROOT/bin/event-poll.sh" "$lid" >> "$ROOT/loops/$lid/state/run.log" 2>&1
+        # retry-backoff: 직전 사이클이 일시적 오류(529·connection closed·타임아웃)나 계정별 인증 문제로
+        # 죽었으면 next_fire를 백오프만큼만 당긴다 — 같은 "next_fire 당기기" 메커니즘이라 새 실행 경로 없음.
+        # event-poll과 같은 PAUSED/enabled·60s 게이트를 공유한다(둘 다 발사 스케줄링이라 성격이 같다).
+        "$ROOT/bin/retry-backoff.sh" "$lid" >> "$ROOT/loops/$lid/state/run.log" 2>&1
       done
     fi
 
