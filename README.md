@@ -105,6 +105,7 @@ loopctl start                      # 디스패처 시작
 | 필드 | 의미 | 기본 |
 |---|---|---|
 | `verify` | PR 직후 **별도 fresh-context 검증자**(maker/checker 분리)가 수용 기준으로 채점 → verdict(✅/⚠️/❌)를 PR·Linear에 코멘트, ❌면 재작업 자동 트리거. 검증자는 Edit/Write가 **구조적으로 차단**됨(코드 못 고침). pr 모드 전용. | `false` |
+| `checks` | **결정론 게이트(Tier 2)** — 검증자 LLM이 판정하기 **전에** 엔진이 쉘로 돌리는 명령들. 결과는 verdict의 **하한**이 되어 LLM이 뒤집을 수 없다: 하나라도 실패 → ❌ fail 고정 · 못 돌림(127/타임아웃/`setup` 실패) → pass 금지(최소 ⚠️ concerns) · 전부 통과 → 하한 없음(의미 판정은 여전히 LLM). LLM이 verdict를 안 남기고 죽어도 체크가 실패였다면 엔진이 verdict를 대신 기록한다. 배열(`["cmd", …]`) 또는 객체(`{setup, run[], timeoutSec}`) 형태. ⚠️ 검증 worktree는 **새 체크아웃이라 `node_modules`가 없다** — 설치가 필요하면 `setup`에 적어라(빠뜨리면 fail이 아니라 "실행 불가"로 잡힌다: 못 돌린 걸 실패로 접으면 전 PR이 fail이 돼 rework 폭풍이 난다). | 없음 |
 | `validate` | 매 사이클 후 미판정 human-gate 제안마다 **제안 검증자**(🧪)가 근거를 실물 재현·심문(수요 진단·전제 도전·축소안 제시)해 판정(🟢/🟡/🔴)을 게이트 UI에 병기. 제안형(PM) 루프용 — 승인·기각은 여전히 사람. | `false` |
 | `retro.everyCycles` | N 사이클마다 **retro run**이 머지·거절·리뷰·게이트 판례에서 교훈을 뽑아 `state/learnings.md` 갱신 → 다음 프롬프트에 주입. `mission.md`는 절대 안 건드림. | 없음 |
 | `budget.dailyUsd` | 일일 비용 소프트 캡(USD). 오늘 헤드리스 사이클 합계가 캡 이상이면 다음 사이클만 skip(진행 중 worker는 유지), 자정 리셋. | 없음 |
