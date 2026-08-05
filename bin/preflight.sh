@@ -11,6 +11,11 @@ loops_tool_path() {
     cmux)   command -v cmux 2>/dev/null || { [[ -x /Applications/cmux.app/Contents/Resources/bin/cmux ]] && echo /Applications/cmux.app/Contents/Resources/bin/cmux; } ;;
     claude) [[ -x "$HOME/.local/bin/claude" ]] && { echo "$HOME/.local/bin/claude"; return; }
             command -v claude 2>/dev/null || { [[ -x /Applications/cmux.app/Contents/Resources/bin/claude ]] && echo /Applications/cmux.app/Contents/Resources/bin/claude; } ;;
+    # 실측 층(measure-*.mjs) 전용 — ego lite 온보딩이 ~/.local/bin 에 심는다. PATH에 없어도 여기서 찾아
+    # install.sh 가 LOOPS_PATH_PREPEND 에 그 dir을 넣어준다(안 그러면 헤드리스 run에서 조용히 안 보인다).
+    ego-browser) [[ -x "$HOME/.local/bin/ego-browser" ]] && { echo "$HOME/.local/bin/ego-browser"; return; }
+            command -v ego-browser 2>/dev/null ;;
+    chrome) command -v "google-chrome" 2>/dev/null || { [[ -x "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome" ]] && echo "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome"; } ;;
     *)      command -v "$1" 2>/dev/null ;;
   esac
 }
@@ -24,6 +29,8 @@ loops_install_cmd() {
     git)    echo "xcode-select --install" ;;
     claude) echo "curl -fsSL https://claude.ai/install.sh | bash   # 또는 cmux 설치 시 번들 포함" ;;
     brew)   echo '/bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"' ;;
+    ego-browser) echo "ego lite 앱 설치 + 온보딩 1회 → https://lite.ego.app/  (CLI가 ~/.local/bin 에 등록됨)" ;;
+    chrome) echo "brew install --cask google-chrome   # Lighthouse가 띄울 브라우저" ;;
   esac
 }
 
@@ -53,6 +60,13 @@ loops_preflight() {
   # 필수: git node claude gh cmux. cmux 가 핵심 전제.
   for tool in git node claude gh cmux; do
     _loops_one "$tool" "$mode" || LOOPS_MISSING=$((LOOPS_MISSING+1))
+  done
+  # 선택: 실측 층(config `measure` 블록이 있는 루프)에서만 필요 — 없어도 나머지 플랫폼은 정상 동작하므로
+  # 누락 수에 세지 않는다. 다만 있으면 install.sh 가 PATH에 넣어줘야 헤드리스 run에서 보인다.
+  for tool in ego-browser chrome; do
+    local otp="$(loops_tool_path "$tool")"
+    if [[ -n "$otp" ]]; then printf '  ✅ %-11s %s\n' "$tool" "$otp"
+    else printf '  ℹ️  %-11s 미설치 (선택 — 실측 루프에서만 필요) — %s\n' "$tool" "$(loops_install_cmd "$tool")"; fi
   done
   if (( LOOPS_MISSING )); then
     echo "  → 미해결 누락 ${LOOPS_MISSING}개. cmux 가 없으면 워커 spawn/대시보드가 동작하지 않습니다."

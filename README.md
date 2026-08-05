@@ -108,6 +108,13 @@ loopctl start                      # 디스패처 시작
 | `validate` | 매 사이클 후 미판정 human-gate 제안마다 **제안 검증자**(🧪)가 근거를 실물 재현·심문(수요 진단·전제 도전·축소안 제시)해 판정(🟢/🟡/🔴)을 게이트 UI에 병기. 제안형(PM) 루프용 — 승인·기각은 여전히 사람. | `false` |
 | `retro.everyCycles` | N 사이클마다 **retro run**이 머지·거절·리뷰·게이트 판례에서 교훈을 뽑아 `state/learnings.md` 갱신 → 다음 프롬프트에 주입. `mission.md`는 절대 안 건드림. | 없음 |
 | `budget.dailyUsd` | 일일 비용 소프트 캡(USD). 오늘 헤드리스 사이클 합계가 캡 이상이면 다음 사이클만 skip(진행 중 worker는 유지), 자정 리셋. | 없음 |
+| `measure` | **실측 층** — 배포된 preview를 실제 브라우저(ego-browser)와 Lighthouse로 재서 발굴·검증의 근거로 삼는다. 있으면 ① `measure-run.mjs <loop>`로 라우트를 순회해 결함/회귀 findings 산출 ② `verify:true`인 경우 검증자 프롬프트에 **PR A/B 재측정 레시피**가 자동 주입된다(`{{VERIFY_RECIPE}}`). 없으면 기존 동작 그대로. | 없음 |
+| `measure.baseUrl` | 기준선 URL(보통 통합 브랜치의 preview). 회귀는 이 대상의 직전 스냅샷 대비로 판정. | 필수 |
+| `measure.routes[]` | `{id, path, selector?, minRoot?, lighthouse?}`. **읽기 전용 라우트만** 넣을 것 — 실제 계정으로 로그인된 채 열리므로 작성/결제 화면은 데이터를 만든다. | 필수 |
+| `measure.login` | 루프 디렉터리 기준 상대경로. `{origin, localStorage:{키:값}}`을 origin 진입 후 심는다(앱의 dev 테스트-로그인 주입 경로). `loops/`는 gitignore라 토큰이 레포에 안 들어간다. | 없음 |
+| `measure.previewUrlRegex` | PR 코멘트에서 preview URL을 뽑는 정규식(`preview-url.mjs`). **브랜치명으로 조합하지 않는다** — 배포 규칙이 바뀌면 조합식은 조용히 틀린 URL을 낸다. | 검증 시 필수 |
+| `measure.viewport` / `waitSec` / `minRoot` | `390x844@3` 같은 모바일 에뮬레이션 / 렌더 준비 **최대** 대기(폴링, 고정 sleep 아님) / 렌더 판정 하한(root innerHTML 길이). | 없음 / `30` / `20000` |
+| `measure.thresholds` | `{bytesPct, requests}` — 직전 스냅샷 대비 회귀 임계. ⚠️ 타이밍(LCP·perf 점수)은 같은 URL 2회 연속에서 배수로 흔들려 **게이트에 쓰지 않는다**(참고치로만 출력). | `5%` / `+10` |
 
 </details>
 
@@ -133,6 +140,20 @@ loopctl start                      # 디스패처 시작
 
 - **파티션** — 각 루프가 `linearLabel`로 프로젝트를 나눈다.
 - **triage(상위 분류기)** — 사람이 라벨 없이 그냥 쌓은 이슈를 dispatcher가 ≤60s에 감지, 값싼 헤드리스 분류로 라벨을 붙인다(LLM은 라벨 *선택*만, 부착·거부는 결정론 스크립트). 붙는 순간 해당 라벨 루프의 `on.linearNew`가 잡아 즉시 착수 — "이슈만 쌓으면 알아서 분류돼 처리". 이슈당 3회 실패 시 "라벨 직접 지정" 코멘트 후 포기.
+
+### 실측 층을 다른 앱에 붙이기
+
+`bin/measure-*.mjs`는 **앱·레포·머신에 대해 아무것도 모른다**(하드코딩된 경로·도메인 0). 앱별 지식은 전부 루프 `config.json`의 `measure` 블록에만 있다. 새 앱에 붙이는 순서:
+
+1. **머신 전제** — `ego lite`(→ `ego-browser` CLI) + Chrome. `./install.sh`(또는 `loopctl doctor`)가 둘 다 **선택 도구로 점검**하고, 있으면 `ego-browser`의 디렉터리를 `LOOPS_PATH_PREPEND`에 넣는다. 없으면 실측만 못 하고 나머지 플랫폼은 그대로 돈다.
+2. **기준선 URL** — 통합 브랜치의 상시 preview(없으면 스테이징·프로덕션). 회귀는 "이 URL의 직전 스냅샷 대비"로 판정하므로 **자주 바뀌는 대상**이어야 의미가 있다.
+3. **preview URL 규칙** — 그 레포 PR에 배포 봇이 남기는 코멘트를 실제로 열어보고 URL 정규식을 `previewUrlRegex`에 적는다. 조합식으로 만들지 말 것.
+4. **로그인** — 이게 **유일하게 앱 조사가 필요한 부분**이다. 대부분의 앱은 dev/QA용 주입 경로를 이미 갖고 있다(테스트 로그인 페이지·localStorage 키·쿼리 파라미터). 찾아서 `login.json`에 `{origin, localStorage:{키:값}}`으로 적는다. ⚠️ **현재 지원은 localStorage 주입뿐** — 쿠키 세션 기반 앱은 `measure-browser.mjs`의 주입 블록에 `cdp('Network.setCookies')` 한 갈래를 추가해야 한다(미구현).
+5. **라우트** — **읽기 전용 화면만.** 실제 계정으로 로그인된 채 열리므로 작성·결제·본인확인 화면을 넣으면 데이터를 만든다.
+6. **임계값 보정** — 한 번 돌리고(`node bin/measure-run.mjs <loop>`) 라우트별 `rootLen`을 본 뒤 정상값의 ~45%를 `minRoot`로 준다. 이 보정을 건너뛰면 작은 페이지가 전부 "미렌더" 거짓 양성이 된다. SSR/정적 페이지처럼 DOM 크기로 판단이 안 되면 라우트에 `selector`를 준다.
+7. `"verify": true` — 그 루프의 PR마다 검증자가 A/B 재측정을 하게 된다(레시피는 자동 주입).
+
+전제가 안 갖춰지면 **조용히 통과하지 않고 비0으로 죽는다**(ego-browser 부재·login 파일 부재·락 실패·결과 마커 부재). "측정 못 했는데 결함 0건"이 이 층에서 가장 위험한 실패이기 때문이다.
 
 ## 폰에서 전부
 

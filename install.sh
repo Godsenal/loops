@@ -15,9 +15,12 @@ echo
 NODE="$(loops_tool_path node)"; GH="$(loops_tool_path gh)"; CMUX="$(loops_tool_path cmux)"; CLAUDE="$(loops_tool_path claude)"
 miss=$LOOPS_MISSING
 
-# PATH prepend = node/claude/gh 들어있는 dir (심볼릭 유지 = 래퍼 dir, 중복 제거, ':' 결합)
+# PATH prepend = node/claude/gh(+있으면 ego-browser) 들어있는 dir (심볼릭 유지 = 래퍼 dir, 중복 제거, ':' 결합)
+# ⚠️ ego-browser 를 빼면 실측 층(measure-browser.mjs)이 헤드리스 run에서 못 찾는다 — 이 머신에서 되던 게
+#    다른 머신에서 안 되는 전형적 원인(여기선 claude 가 같은 ~/.local/bin 에 있어서 우연히 됐다).
+EGO="$(loops_tool_path ego-browser)"
 typeset -aU dirs
-for b in "$NODE" "$CLAUDE" "$GH"; do [[ -n "$b" ]] && dirs+=("${b:h}"); done
+for b in "$NODE" "$CLAUDE" "$GH" "$EGO"; do [[ -n "$b" ]] && dirs+=("${b:h}"); done
 PREPEND="${(j.:.)dirs}"
 
 # 기존 값 보존(재실행 시) — loops.env 있으면 WORKTREE_BASE/DEFAULT_REPO/PORT/BUNDLE 유지

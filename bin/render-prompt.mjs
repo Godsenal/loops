@@ -45,6 +45,36 @@ vars.LEARNINGS = learnings
   ? `\n────────── LEARNINGS (retro가 이 루프의 실제 성과에서 추출한 교훈 — 발굴·구현 시 반영하라) ──────────\n${learnings}\n──────────────────────────────────────────────────────────────\n`
   : '';
 
+// 실측 검증 레시피(config `measure` 블록이 있는 루프만) — 검증자가 "돌려봤다"고 주장하는 대신
+// **결정론 측정기를 실제로 실행**하게 만든다. measure 블록이 없으면 빈 문자열 = 기존 검증 동작 그대로.
+// A/B(기준선 → PR)를 같은 label로 두 번 돌리는 이유: 두 번째 출력의 findings가 곧 "이 PR이 바꾼 것"이다.
+vars.VERIFY_RECIPE = cfg.measure?.routes?.length
+  ? `
+── 실측 검증 (이 루프 전용 — 위 3번의 "실제로 실행한다"에 이것이 포함된다) ──
+이 루프는 배포된 preview를 브라우저·Lighthouse로 **직접 잰다**. 코드만 읽고 pass를 주지 마라.
+1. URL 확보 (조합 금지 — 못 찾으면 사유를 적고 "실행 불가"로 남긴다):
+   \`\`\`sh
+   BASE_URL=$(node ${ROOT}/bin/preview-url.mjs ${loopId} <ISSUE> --base)
+   PR_URL=$(node ${ROOT}/bin/preview-url.mjs ${loopId} <ISSUE>)
+   \`\`\`
+   PR preview가 아직 안 올라왔으면(배포 대기) 2~3분 간격으로 최대 3회 재시도한다.
+2. **관련 라우트만** 고른다 — 이슈가 건드린 화면. 전 라우트 A/B는 20분 이상이라 무인 검증에 못 쓴다.
+   가능한 id: ${cfg.measure.routes.map((r) => r.id).join(', ')}
+3. 같은 label로 **기준선 → PR** 순서로 두 번 (두 번째 출력의 \`findings\`가 이 PR의 영향이다):
+   \`\`\`sh
+   node ${ROOT}/bin/measure-run.mjs ${loopId} --routes <ids> --label pr-<ISSUE> --base-url "$BASE_URL"
+   node ${ROOT}/bin/measure-run.mjs ${loopId} --routes <ids> --label pr-<ISSUE> --base-url "$PR_URL"
+   \`\`\`
+4. 채점 규칙:
+   - \`not-rendered\`·\`js-error\`·\`api-error\`·\`http-error\`(5xx)가 **PR 쪽에만** 생겼다 → **fail**.
+   - \`bytes-regression\`·\`requests-regression\`·\`score-regression\`·\`audit-regression\` → 이슈가 그걸 의도한 게 아니라면 **fail**, 사소하면 concerns.
+   - 이슈의 수용 기준이 특정 audit/바이트 개선이면 **개선이 실제로 측정됐는지** 확인 — 안 됐으면 concerns(주장만으로 pass 금지).
+   - ⚠️ **타이밍(LCP·FCP·performance 점수)으로 fail을 주지 마라.** 같은 URL 2회 연속 실측에서 perf 50 vs 78, LCP 8.7s vs 2.3s가 나왔다 — 노이즈다. 게이트는 렌더 여부·에러·바이트·요청 수·audit 실패뿐이다.
+   - 스크린샷(\`${ROOT}/loops/${loopId}/state/measure/shots/\`)을 **Read 도구로 실제로 본다** — 깨진 레이아웃은 수치로 안 잡힌다.
+5. verdict 코멘트에 **측정 출력을 인용**한다(요약만 쓰지 말 것). login 토큰은 절대 붙여넣지 마라.
+`
+  : '';
+
 // 하나의 Linear 프로젝트를 라벨로 나눠 여러 루프가 공유할 때(config linearLabel, 예: bug / feature-request).
 // 비면 블록 통째 생략 = 프로젝트 전체 담당(기존 단독-프로젝트 루프 동작 그대로, 하위호환).
 vars.LINEAR_LABEL = cfg.linearLabel || '';
