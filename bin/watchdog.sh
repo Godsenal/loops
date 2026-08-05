@@ -41,6 +41,9 @@ CMUX="$CMUX_BIN"; GH="$GH_BIN"
 HEAL_MAX=${LOOP_HEAL_MAX:-2}
 GRACE=${LOOP_WATCHDOG_GRACE_SEC:-90}
 WEDGE_SEC=${LOOP_WEDGE_SEC:-300}   # 화면이 이 시간 이상 불변이면 wedge로 표면화(진행중 claude는 타이머/스피너로 매초 화면이 변함).
+# 배달 후(OPEN PR) 상주 monitor가 굳은 걸 판정하는 임계. 일반 wedge(300s)보다 훨씬 길게 잡는다 — monitor는 폴링 사이에
+# 정당하게 조용하고, 실측 정상치가 open→merge 67~103분이라 짧게 잡으면 멀쩡한 감시를 정체로 오탐한다.
+MERGE_WEDGE_SEC=${LOOP_MERGE_WEDGE_SEC:-3600}
 CORPSE_PASSES=${LOOP_CORPSE_PASSES:-3}   # 미머티리얼라이즈 시체 판정: pidfile 없음+커밋 0+빈 화면이 이 패스 수만큼 연속돼야 닫는다(플레이크 방어).
 LIVENESS="$STATE/liveness.json"
 
@@ -150,16 +153,20 @@ done < <(git -C "$REPO" worktree list --porcelain 2>/dev/null | sed -n 's/^workt
 #    ⚠️ open만 보면 안 된다: 사람이 머지한 직후(merged)엔 Linear가 아직 started인데(orchestrator STEP1 리컨사일 전)
 #       워커 claude는 프롬프트에서 idle → open PR 없다고 wedged로 오탐한다. merged=Done대기, closed=Canceled대기, 모두 "배달됨".
 #    gh는 cwd로 레포를 잡는다(origin이 mirror여도 로컬 레포 기준 — PR URL 추측 금지 원칙과 동일).
-typeset -A DELIVERED
+#    ⚠️ 단 "소관 아님"이 곧 "복구 액터 있음"은 아니다 — OPEN PR 상태로 상주 monitor가 굳으면 heal도 wedge도 안 걸려
+#       아무도 안 움직인다. 그래서 OPEN 여부를 따로 들고 아래에서 머지단계 정체만 표면화한다(PR_OPEN).
+typeset -A DELIVERED PR_OPEN PR_NUM
 if [[ "$DELIVERY" != "direct" && -n "$GH" && -n "$REPO" ]]; then
-  while IFS= read -r br; do
+  while IFS=$'\t' read -r br pst pnum; do
     [[ "$br" == "${BRPFX}/"* ]] || continue
-    DELIVERED[$(slugof "${br#${BRPFX}/}")]=1
-  done < <(cd "$REPO" && "$GH" pr list --search "head:${BRPFX}/" --state all --json headRefName --limit 200 -q '.[].headRefName' 2>/dev/null)
+    psl="$(slugof "${br#${BRPFX}/}")"
+    DELIVERED[$psl]=1
+    [[ "$pst" == "OPEN" ]] && { PR_OPEN[$psl]=1; PR_NUM[$psl]="$pnum" }
+  done < <(cd "$REPO" && "$GH" pr list --search "head:${BRPFX}/" --state all --json headRefName,state,number --limit 200 -q '.[] | [.headRefName, .state, (.number|tostring)] | @tsv' 2>/dev/null)
 fi
 
 now=$(date +%s)
-healed=0; escalated=0; waiting=0; cleared=0; wedged_n=0; ghost_n=0
+healed=0; escalated=0; waiting=0; cleared=0; wedged_n=0; ghost_n=0; mwedged_n=0
 for sl in ${(k)STARTED}; do
   id="${SLUGID[$sl]:-${sl:u}}"
   if [[ -n "${TERMINAL[$sl]:-}" ]]; then
@@ -169,7 +176,34 @@ for sl in ${(k)STARTED}; do
     # (pr 모드) 브랜치에 PR 존재(배달됨: In Review/Done대기/Canceled대기) → 소관 아님. **탭 유무 무관** — 워커가 PR 열고
     # 상주 monitor로 탭이 살아있어도, 사람이 머지한 직후여도 wedge/heal로 오탐하면 안 되므로 여기서 먼저 걸러낸다.
     # 단 시체 탭만은 여기서도 걷는다 — 안 걷으면 rework/heal의 live-탭 dedup이 영구 차단돼 새 피드백이 처리되지 않는다.
-    close_if_corpse "${TAB_REF[$sl]:-}" "$id"
+    if ! close_if_corpse "${TAB_REF[$sl]:-}" "$id"; then
+      # ── 머지단계 wedge 표면화 ──
+      # 배달된 이슈는 위 게이트로 heal·wedge 대상에서 빠지므로, PR이 OPEN인 채 상주 monitor가 굳으면 **복구할 액터가
+      # 구조적으로 존재하지 않는다**(실측: 3구간 누적 ~7.5h 손실). 이 공백이 "오케스트레이터가 직접 머지하라"는 우회
+      # 학습을 낳아 no-merge 불변식을 침식했다 — 그래서 엔진이 대신 **사람에게 표면화**한다.
+      # 여기서 머지·kill·push는 하지 않는다. 머지는 여전히 사람 게이트고, 이건 그 게이트를 깨우는 신호일 뿐이다.
+      mref="${TAB_REF[$sl]:-}"
+      if [[ -n "${PR_OPEN[$sl]:-}" && -n "$mref" ]]; then
+        mscr="$("$CMUX" read-screen --workspace "$mref" --lines 24 2>/dev/null)"
+        if [[ -n "$mscr" ]]; then    # 빈 응답은 읽기 플레이크 — 해시하면 상수라 정체로 오탐한다(일반 wedge와 동일 이유)
+          mh="$(print -r -- "$mscr" | shasum | awk '{print $1}')"
+          pmh="$(lv_get "$id" mscrhash)"; pmat="$(lv_get "$id" mscrAt)"
+          if [[ "$mh" != "$pmh" ]]; then
+            lv_put "$id" "{\"mscrhash\":\"$mh\",\"mscrAt\":$now}"      # 화면 변화 = monitor 살아있음 → 정상
+            (( cleared++ )); continue
+          fi
+          [[ -z "$pmat" ]] && pmat=$now
+          if (( now - pmat >= MERGE_WEDGE_SEC )); then
+            [[ "$(lv_get "$id" mergeWedged)" == "true" ]] || \
+              echo "🔀 watchdog $LOOP/$id — PR #${PR_NUM[$sl]:-?} OPEN인데 배달 후 $(( (now-pmat)/60 ))분째 정체 → 사람 표면화 (머지 안 함)"
+            lv_put "$id" "{\"mergeWedged\":true,\"prNum\":\"${PR_NUM[$sl]:-}\",\"mscrhash\":\"$mh\",\"mscrAt\":$pmat}"
+            (( mwedged_n++ )); continue
+          fi
+          lv_put "$id" "{\"mscrhash\":\"$mh\",\"mscrAt\":$pmat}"       # 임계 미만 → 관망
+          (( waiting++ )); continue
+        fi
+      fi
+    fi
     lv_del "$id"; (( cleared++ )); continue
   fi
   ref="${TAB_REF[$sl]:-}"
@@ -238,5 +272,5 @@ if (( linear_n > 0 )); then
   done
 fi
 
-[[ -z "${WATCHDOG_QUIET:-}" ]] && echo "🐕 watchdog $LOOP — started ${#STARTED}개 · heal ${healed} · escalate ${escalated} · wedged ${wedged_n} · 유령 ${ghost_n}(리퍼회수) · 대기 ${waiting} · clear ${cleared}"
+[[ -z "${WATCHDOG_QUIET:-}" ]] && echo "🐕 watchdog $LOOP — started ${#STARTED}개 · heal ${healed} · escalate ${escalated} · wedged ${wedged_n} · 머지정체 ${mwedged_n} · 유령 ${ghost_n}(리퍼회수) · 대기 ${waiting} · clear ${cleared}"
 exit 0

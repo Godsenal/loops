@@ -54,6 +54,12 @@ else
 fi
 
 TPL=orchestrator; [[ "$LOOP_MODE" == "retro" ]] && TPL=retro   # retro = 성과 분석→learnings.md 갱신 전용 프롬프트(발굴/fan-out 없음)
+# retro는 learnings.md를 통으로 다시 쓴다 = 매 run 프롬프트에 주입되는 글을 LLM이 자유 편집한다는 뜻이다.
+# 갱신 전 원본을 떠둔다 — 아래 learnings-guard가 불변식 위반을 잡으면 되돌려야 하는데, 그때는 원본이 이미 없다.
+LEARN="$STATE/learnings.md"; LEARN_BAK="$STATE/.learnings.bak"
+if [[ "$LOOP_MODE" == "retro" ]]; then
+  if [[ -f "$LEARN" ]]; then cp "$LEARN" "$LEARN_BAK" 2>/dev/null; else rm -f "$LEARN_BAK" 2>/dev/null; fi
+fi
 PROMPT="$(node "$ROOT/bin/render-prompt.mjs" "$LOOP" "$TPL")"
 echo "[$(date '+%F %T')] ===== $LOOP orchestrator start (mode=$LOOP_MODE${TIMEOUT_BIN:+, timeout=${RUN_TIMEOUT}s}) =====" >> "$STATE/run.log"
 # --output-format json 으로 실행해 비용/사용량을 캡처한다. -p 는 어차피 최종 결과만 stdout에 쓰므로(스트리밍 없음)
@@ -66,6 +72,24 @@ node "$ROOT/bin/record-cost.mjs" "$LOOP" "$OUTJSON" cycle "$LOOP_MODE" >> "$STAT
 echo "[$(date '+%F %T')] ===== $LOOP orchestrator end (exit $code) =====" >> "$STATE/run.log"
 echo "$code" > "$STATE/.last_run_exit"   # 최신 run의 exit (성공 run이 0으로 덮어 배너 자동해제)
 date '+%s' > "$STATE/.last_run_done"
+
+# retro 갱신 재검사 (결정론 게이트) — retro-base.md의 ⛔ 금지는 프롬프트라 LLM이 "근거가 충분하다"고 판단하면 뚫린다.
+# 실제로 뚫렸다: no-merge 불변식을 해제하는 교훈이 기록돼 매 run 주입됐고 한 구간 머지 11건 중 8건이 그 경로였다.
+# 그래서 같은 규칙을 쉘 층에 한 번 더 걸고, 위반이면 **갱신을 통째로 롤백**한다(부분 수정은 하지 않는다 —
+# 어느 줄이 오염됐는지 판정하는 건 다시 LLM 일이고, 그게 뚫린 층이다). 사람에게는 반드시 알린다.
+if [[ "$LOOP_MODE" == "retro" && -f "$LEARN" ]]; then
+  if guard_out="$(node "$ROOT/bin/learnings-guard.mjs" "$LOOP" 2>&1)"; then
+    [[ -n "$guard_out" ]] && echo "$guard_out" >> "$STATE/run.log"
+  else
+    if [[ -f "$LEARN_BAK" ]]; then cp "$LEARN_BAK" "$LEARN"; else rm -f "$LEARN"; fi
+    {
+      echo "[$(date '+%F %T')] ⛔ learnings 불변식 위반 — 갱신 롤백(이전 내용 복원)"
+      echo "$guard_out"
+    } >> "$STATE/run.log"
+    print -r -- "{\"ts\":$(date +%s),\"type\":\"retro\",\"event\":\"rolled-back\",\"note\":\"learnings 불변식 위반\"}" >> "$STATE/runs.jsonl"
+    node "$ROOT/bin/tg-notify.mjs" "⛔ $LOOP retro — learnings.md 불변식 위반으로 갱신 롤백. run.log 확인 필요." >/dev/null 2>&1
+  fi
+fi
 
 # 종료 상태(Linear completed/canceled) worker worktree·탭·브랜치 자동 정리(결정론적 쉘 — LLM 안 거침).
 # cleanup-terminal.sh가 실제 worktree를 열거하고 Linear(권위 ledger) 상태로 종료 판정한다(snapshot은 폴백).

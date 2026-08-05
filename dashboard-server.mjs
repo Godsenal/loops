@@ -191,6 +191,9 @@ function loopStatus(lid, allTabs) {
     const stuck = !!(lv && lv.escalated);                      // 워치독이 자가복구 N회 실패로 포기 → 사람 필요
     const wedged = !!(lv && lv.wedged && alive);               // 탭은 살아있으나 화면이 WEDGE_SEC 이상 정지 = 멈춘 claude → 사람 확인(자동 kill 안 함)
     const healing = !!(lv && lv.attempts > 0 && !lv.escalated && !alive);  // 자가복구 진행중(조용, 경보 아님)
+    // 배달 후(OPEN PR) 상주 monitor가 MERGE_WEDGE_SEC 이상 정체 = 워치독의 heal/wedge 범위 밖이라 복구 액터가 없는 상태.
+    // 사람이 머지(또는 확인)해야 풀린다 — 엔진은 절대 머지하지 않으므로 이 표면화가 유일한 해소 경로다.
+    const mergeWedged = !!(lv && lv.mergeWedged && alive && live && live.state === 'OPEN');
     const gateResolved = i.flag === 'human-gate' && existsSync(`${st}/decisions/${i.id}.md`);
     const verify = readJSON(`${st}/verify/${i.id}.json`);   // 검증자(verifier) verdict {verdict,ts,summary} — verify 켜진 루프만 존재
     const validate = readJSON(`${st}/validate/${i.id}.json`);   // 제안 검증자(validator) verdict {verdict,ts,summary,ask_note,alternative} — validate 켜진 제안형 루프만 존재
@@ -216,10 +219,10 @@ function loopStatus(lid, allTabs) {
       commentCount: live ? live.commentCount : undefined, gateResolved,
       verify: verify ? { verdict: verify.verdict, ts: verify.ts, summary: verify.summary } : null,
       validate: validate ? { verdict: validate.verdict, ts: validate.ts, summary: validate.summary, askNote: validate.ask_note, alternative: validate.alternative } : null,
-      stuck, wedged, healing, healAttempts: lv ? (lv.attempts || 0) : 0,
+      stuck, wedged, healing, mergeWedged, healAttempts: lv ? (lv.attempts || 0) : 0,
       reworkCount: rw ? (rw.count || 0) : 0, reworkExhausted,
-      // attention 우선순위: rework-exhausted(자동 반영 포기 → 사람 필수) > PR 라이브 신호 > human-gate > stuck > wedged > stalled.
-      attention: (reworkExhausted ? 'rework-exhausted' : null) || (live ? live.attention : null) || (i.flag === 'human-gate' && !gateResolved ? 'human-gate' : null) || (stuck ? 'stuck' : null) || (wedged ? 'wedged' : null) || (stalled && !healing ? 'stalled-worker' : null),
+      // attention 우선순위: rework-exhausted(자동 반영 포기 → 사람 필수) > PR 라이브 신호 > human-gate > merge-wedged > stuck > wedged > stalled.
+      attention: (reworkExhausted ? 'rework-exhausted' : null) || (live ? live.attention : null) || (i.flag === 'human-gate' && !gateResolved ? 'human-gate' : null) || (mergeWedged ? 'merge-wedged' : null) || (stuck ? 'stuck' : null) || (wedged ? 'wedged' : null) || (stalled && !healing ? 'stalled-worker' : null),
     };
   }).sort((a, b) => (order[a.state] ?? 9) - (order[b.state] ?? 9));
   // counts는 파생 상태로 재계산 → 사이드바/카운트가 카드와 일치 (snap.counts는 시간당 1회라 뒤처짐).
@@ -845,7 +848,7 @@ async function sendPush(payload) {
   return { sent: push.subs.length };
 }
 // 주의 신호(🔴 human-gate·rework-exhausted·stuck·CI 실패 등) diff → 새 신호만 폰으로 push. 첫 폴링(warm 전)은 무음 시드.
-const PUSH_LABEL = { 'human-gate': '🔴 사람 판단 필요', 'rework-exhausted': '⚠️ 자동반영 포기 — 사람 필요', 'ci-failed': '❌ CI 실패', 'pr-review': '👀 리뷰 요청', 'pr-closed': '🚪 PR 닫힘(정리 대상)', stuck: '🧟 stuck(자가복구 실패)', wedged: '🧊 wedged(멈춤)', 'stalled-worker': '💤 워커 정지' };
+const PUSH_LABEL = { 'human-gate': '🔴 사람 판단 필요', 'rework-exhausted': '⚠️ 자동반영 포기 — 사람 필요', 'ci-failed': '❌ CI 실패', 'pr-review': '👀 리뷰 요청', 'pr-closed': '🚪 PR 닫힘(정리 대상)', 'merge-wedged': '🔀 배달 후 정체 — 머지 확인 필요', stuck: '🧟 stuck(자가복구 실패)', wedged: '🧊 wedged(멈춤)', 'stalled-worker': '💤 워커 정지' };
 let pushWarm = false;
 async function pushTick() {
   if (!push.subs.length) return;                          // 구독 0 → 크립토/폴링 생략
