@@ -54,6 +54,6 @@ $REWORK_BLOCK}${DECISION:+
 ═══ ⚖️ 사람이 대시보드에서 내린 결정 (human-gate 해제됨) ═══
 사용자가 이 이슈의 human-gate를 직접 해제하고 아래 결정을 내렸다. 이 결정을 **최우선 지침**으로 따르라 — 이슈 본문의 \"human-gate/사람 판단 필요\" 표시는 이 결정으로 해소된 것으로 간주하고, 절차 2의 human-gate 중단을 하지 말고 구현을 진행하라. 시작 시 이 이슈를 Linear에서 In Progress로 옮기고, 이 결정 내용을 이슈에 코멘트로 남겨 기록하라.
 
-$DECISION}" --dangerously-skip-permissions
+$DECISION}" --disallowedTools "${LOOPS_TOOL_DENY_BROWSER[@]}" --dangerously-skip-permissions
 CLAUDE_EXIT=$?
 echo "════════ 🛠 $LOOP worker $ID 종료 (exit $CLAUDE_EXIT)  $(date '+%F %T') ════════"

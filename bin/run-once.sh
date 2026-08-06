@@ -65,7 +65,7 @@ echo "[$(date '+%F %T')] ===== $LOOP orchestrator start (mode=$LOOP_MODE${TIMEOU
 # --output-format json 으로 실행해 비용/사용량을 캡처한다. -p 는 어차피 최종 결과만 stdout에 쓰므로(스트리밍 없음)
 # 사람이 읽는 run.log 내용은 record-cost.mjs가 result 텍스트를 뽑아 그대로 보존한다(stderr는 종전처럼 run.log 직행).
 OUTJSON="$STATE/.last_run_out.json"
-( cd "$ORCHWT" && ${=TIMEOUT_BIN} ${=CLAUDE_CMD} -p "$PROMPT" --output-format json --dangerously-skip-permissions ) > "$OUTJSON" 2>> "$STATE/run.log"
+( cd "$ORCHWT" && ${=TIMEOUT_BIN} ${=CLAUDE_CMD} -p "$PROMPT" --output-format json --disallowedTools "${LOOPS_TOOL_DENY_BROWSER[@]}" --dangerously-skip-permissions ) > "$OUTJSON" 2>> "$STATE/run.log"
 code=$?
 node "$ROOT/bin/record-cost.mjs" "$LOOP" "$OUTJSON" cycle "$LOOP_MODE" >> "$STATE/run.log" 2>&1
 [[ -n "$TIMEOUT_BIN" && $code -eq 124 ]] && echo "[$(date '+%F %T')] ⏱ run timeout(${RUN_TIMEOUT}s) 초과 — claude 강제종료(exit 124)" >> "$STATE/run.log"

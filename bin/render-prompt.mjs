@@ -45,6 +45,22 @@ vars.LEARNINGS = learnings
   ? `\n────────── LEARNINGS (retro가 이 루프의 실제 성과에서 추출한 교훈 — 발굴·구현 시 반영하라) ──────────\n${learnings}\n──────────────────────────────────────────────────────────────\n`
   : '';
 
+// 브라우저 경로 단일화 — **무조건** 주입한다(measure 유무와 무관).
+// 왜 무조건인가: 예전엔 브라우저 지시가 아래 VERIFY_RECIPE 안에만 있어서 measure 블록이 없는 루프(=지금 도는
+// 검증 루프 전부)는 "브라우저를 어떻게 볼지"에 대한 지시가 한 글자도 없었다. 그 공백에서 LLM은 글로벌 MCP로
+// 상속된 playwright/chrome-devtools를 집었다(실측: verdict 364건 중 playwright 9건 · ego-browser 0건).
+// _common.sh의 LOOPS_TOOL_DENY_BROWSER가 그 툴들을 구조적으로 지웠으므로, 여기서 대체 경로를 알려주지 않으면
+// LLM은 "브라우저를 쓸 수 없다"로 오판하고 실측 없이 pass를 준다 — 차단과 이 블록은 한 쌍이다.
+vars.BROWSER_POLICY = `
+── 브라우저 정책 (엔진 전역 · 예외 없음) ──
+브라우저가 필요하면 **ego-browser 스킬만** 쓴다. playwright·chrome-devtools·claude-in-chrome MCP는 이 세션에서
+\`--disallowedTools\`로 **차단돼 있다** — 호출하면 실패한다. 차단됐다는 이유로 "브라우저 확인 불가"라고 적지 마라(경로는 있다).
+- 사용법: \`ego-browser nodejs <<'EOF' … EOF\` **Bash 헤레독**. 파일을 쓰지 않으므로 Edit/Write가 막힌 세션(검증자·validator)에서도 그대로 된다. 헬퍼 목록·주의사항은 ego-browser 스킬을 읽어라.
+- ego-browser는 사용자 로그인 상태를 격리된 task space에서 재사용한다 — 인증이 필요한 preview를 무인 세션이 볼 수 있는 유일한 경로다.
+- 정적 페이지 본문만 필요하면 WebFetch로 충분하다. 브라우저를 띄우는 건 렌더 결과·JS 에러·네트워크 실패·로그인 뒤 화면이 필요할 때다.
+- \`ego-browser\`가 PATH에 없으면(미설치) 그건 **"실행 불가"로 명시**할 사항이지 다른 브라우저로 우회할 사유가 아니다.
+`;
+
 // 실측 검증 레시피(config `measure` 블록이 있는 루프만) — 검증자가 "돌려봤다"고 주장하는 대신
 // **결정론 측정기를 실제로 실행**하게 만든다. measure 블록이 없으면 빈 문자열 = 기존 검증 동작 그대로.
 // A/B(기준선 → PR)를 같은 label로 두 번 돌리는 이유: 두 번째 출력의 findings가 곧 "이 PR이 바꾼 것"이다.

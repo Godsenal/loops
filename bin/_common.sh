@@ -12,6 +12,24 @@ export GH_BIN="${GH_BIN:-$(command -v gh 2>/dev/null)}"
 export WORKTREE_BASE="${WORKTREE_BASE:-$HOME/LTH}"
 export DEFAULT_REPO="${DEFAULT_REPO:-}"
 
+# ── 브라우저 경로 단일화: 경쟁 브라우저 MCP를 구조적으로 차단한다 ──
+# 엔진의 claude 호출(run-once·worker-run·verifier-run·validator-run)은 사용자의 글로벌 MCP를
+# 통째로 상속한다(--strict-mcp-config를 못 쓴다 — 4개 base 프롬프트가 linear-server MCP의
+# extract_images에 의존). 그 결과 playwright/chrome-devtools가 **바로 호출 가능한 툴**로 보이고,
+# ego-browser는 스킬(읽고 Bash 헤레독으로 몰아야 하는 2단계)이라 LLM이 늘 전자를 집었다
+# — 실측: verdict 364건 중 playwright 인용 9건, ego-browser/measure-run 0건.
+# 프롬프트로 못 막으니 툴 부재로 막는다(검증자의 Edit/Write 차단과 동일 원칙).
+# ⚠️ 서버명만 쓰면 그 서버의 전체 툴이 매칭된다. 여기에 이름을 추가할 땐 그 서버가
+#    엔진 프롬프트가 의존하는 기능(예: linear-server extract_images)을 갖고 있지 않은지 먼저 확인할 것.
+# ⚠️ cloop 래퍼는 --disallowedTools의 값을 "다음 -로 시작하는 인자 전까지" 전부 소비하므로
+#    값이 늘어도 재개 시 보존된다(값-플래그 목록 변경 불필요).
+typeset -ga LOOPS_TOOL_DENY_BROWSER=(
+  mcp__playwright
+  mcp__chrome-devtools
+  mcp__plugin_chrome-devtools-mcp_chrome-devtools
+  mcp__claude-in-chrome
+)
+
 # config.json의 dot-path 값을 읽는 단일 헬퍼. usage: cfgval <file> <dotpath>
 # 부재/null/undefined → "" , 그 외 stringify(0→"0", false→"false"). stderr는 묻지 않음(loud).
 # stderr를 묻고 싶은 호출자는 `cfgval ... 2>/dev/null` 로 감싼다(예: dispatch.sh의 field).

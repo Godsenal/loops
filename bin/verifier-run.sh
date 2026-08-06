@@ -93,7 +93,7 @@ fi
 OUTJSON="$STATE/verify/.last_out_$ID.json"
 ${=CLAUDE_CMD} -p "$PROMPT
 
-═══ 배정 이슈 ID: $ID ═══" --output-format json --disallowedTools "Edit" "Write" "NotebookEdit" --dangerously-skip-permissions > "$OUTJSON" 2>&1
+═══ 배정 이슈 ID: $ID ═══" --output-format json --disallowedTools "Edit" "Write" "NotebookEdit" "${LOOPS_TOOL_DENY_BROWSER[@]}" --dangerously-skip-permissions > "$OUTJSON" 2>&1
 code=$?
 node "$ROOT/bin/record-cost.mjs" "$LOOP" "$OUTJSON" verify
 echo

@@ -30,7 +30,7 @@ echo "════════ 🧪 $LOOP validator $ID 시작  $(date '+%F %T')
 OUTJSON="$STATE/validate/.last_out_$ID.json"
 ${=CLAUDE_CMD} -p "$PROMPT
 
-═══ 배정 이슈 ID: $ID ═══" --output-format json --disallowedTools "Edit" "Write" "NotebookEdit" --dangerously-skip-permissions > "$OUTJSON" 2>&1
+═══ 배정 이슈 ID: $ID ═══" --output-format json --disallowedTools "Edit" "Write" "NotebookEdit" "${LOOPS_TOOL_DENY_BROWSER[@]}" --dangerously-skip-permissions > "$OUTJSON" 2>&1
 code=$?
 node "$ROOT/bin/record-cost.mjs" "$LOOP" "$OUTJSON" validate
 echo
