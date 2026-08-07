@@ -40,13 +40,25 @@ function loopCfg(lid) {
   try { return mergeProduct(ROOT, c); }
   catch (e) { console.error(`[config] ${lid}: product '${c.product}' 머지 실패 — ${e.message}`); return c; }
 }
-function tabsAll() {
+/* 짧은 TTL 메모. 감싸는 대상은 execFileSync — 하위 프로세스를 통째로 띄우는 동안 이벤트
+   루프가 그대로 멈춘다. /api/status는 2초마다(클라이언트가 여럿이면 더 자주) 불리는데
+   답은 그 사이 거의 안 바뀌므로, 매번 새로 spawn할 이유가 없다. */
+function memo(ms, fn) {
+  let at = 0, val;
+  return () => {
+    const now = Date.now();
+    if (now - at < ms) return val;
+    at = now; val = fn();
+    return val;
+  };
+}
+const tabsAll = memo(1500, () => {
   try {
     return execFileSync(CMUX, ['list-workspaces'], { encoding: 'utf8', timeout: 4000 })
       .split('\n').map(l => { const m = l.match(/workspace:\d+/); const title = l.replace(/^\s*\*?\s*workspace:\d+\s*/, '').trim(); return m ? { ref: m[0], title } : null; })
       .filter(Boolean);
   } catch { return []; }
-}
+});
 function globalDispatcher() {
   const t = readText(GPID).trim(); const pid = t ? +t : null; const running = pid ? pidAlive(pid) : false;
   return { running, paused: existsSync(GPAUSED), pid: running ? pid : null };
@@ -54,7 +66,7 @@ function globalDispatcher() {
 // caffeinate(잠자기 방지) 살아있는 pid 또는 null. detached로 떠서 대시보드 서버 재시작과 무관하게 유지된다.
 function awakeStatus() { const t = readText(GAWAKE).trim(); const pid = t ? +t : null; return pid && pidAlive(pid) ? pid : null; }
 // Telegram 브리지(notify-bot) 상태 — 토큰/chat은 loops.env를 live로 다시 읽어 페어링을 즉시 반영, running은 pgrep. 비밀값은 노출 안 하고 boolean만.
-function botRunning() { try { execFileSync('/usr/bin/pgrep', ['-f', `${ROOT}/bin/notify-bot.mjs`], { timeout: 2000 }); return true; } catch { return false; } }
+const botRunning = memo(1500, () => { try { execFileSync('/usr/bin/pgrep', ['-f', `${ROOT}/bin/notify-bot.mjs`], { timeout: 2000 }); return true; } catch { return false; } });
 function telegramStatus() { const e = loadEnv(ROOT); return { configured: !!(e.TELEGRAM_BOT_TOKEN || ''), paired: !!(e.TELEGRAM_CHAT_ID || ''), running: botRunning() }; }
 function feedOf(st) { return readText(`${st}/runs.jsonl`).trim().split('\n').filter(Boolean).map(l => { try { return JSON.parse(l); } catch { return null; } }).filter(Boolean); }
 // 루프 경제성 집계 — costs.jsonl(run-once가 사이클마다 append) + 파생 counts + rework.json.
@@ -169,11 +181,14 @@ function authStateOf(lt, snapState) {
   return ['In Progress', 'In Review', 'Done', 'Canceled', 'Cancelled'].includes(snapState) ? 'Backlog' : snapState;
 }
 
-function loopStatus(lid, allTabs) {
+// wantIssues=false면 이 루프는 사이드바 한 줄로만 쓰인다 — 이슈 카드도 활동 피드도 안 그린다.
+function loopStatus(lid, allTabs, wantIssues = true) {
   const dir = `${LOOPS}/${lid}`, st = `${dir}/state`;
   const cfg = loopCfg(lid);
   const snap = readJSON(`${st}/snapshot.json`);
-  const f = feedOf(st);
+  // runs.jsonl은 루프당 최대 800KB대고 줄마다 JSON.parse가 돈다. 화면에 안 나갈 피드까지
+  // 매 요청(2초)마다 통째로 읽으면 그 시간만큼 이벤트 루프가 멈춘다 — 필요할 때만 읽는다.
+  const f = wantIssues ? feedOf(st) : [];
   const order = { 'In Progress': 0, 'In Review': 1, 'Backlog': 2, 'Done': 3, 'Canceled': 4 };
   const tabByIssue = {};
   // 🛠=fresh worker, ↩=resume/heal 탭 둘 다 "살아있는 worker"로 인식 (안 하면 heal된 ↩ 탭을 죽은 걸로 오판해 워치독이 무한 재기동).
@@ -239,7 +254,10 @@ function loopStatus(lid, allTabs) {
     repo: cfg.repo || '', linearProjectUrl: cfg.linearProjectUrl || '', maxWorkers: cfg.maxWorkers || 2,
     delivery: cfg.delivery || 'pr',
     schedule: cfg.schedule || { intervalSec: 3600, startAt: null }, paused: existsSync(`${st}/PAUSED`),
-    nextTs, lastRun, counts, issues, feed: f.slice(-40).reverse(),
+    // issues는 선택된 루프만 — 사이드바는 counts/attentionCount만 읽고 이슈 카드는 선택된
+    // 루프 하나만 그린다. 전부 실어보내던 시절엔 434건이 응답의 대부분(436KB)을 차지했고,
+    // 그중 화면에 닿는 건 1/11이었다. 나머지는 2초마다 폰으로 내려가 폴링을 정체시켰다.
+    nextTs, lastRun, counts, issues: wantIssues ? issues : [], feed: wantIssues ? f.slice(-40).reverse() : [],
     economics: economicsOf(st, cfg, counts, rework),
     learningsTs: (() => { try { return Math.floor(statSync(`${st}/learnings.md`).mtimeMs / 1000); } catch { return null; } })(),
     // 오케스트레이터가 인프라 wedge(cmux spawn 실패 등)로 사이클을 못 돌 때 snapshot에 남기는 {reason,streak} — UI 배너로 표출.
@@ -252,9 +270,9 @@ function loopStatus(lid, allTabs) {
     orchRunning,
   };
 }
-function status() {
+function status(sel) {
   const allTabs = tabsAll();
-  return { now: Math.floor(Date.now() / 1000), dispatcher: globalDispatcher(), awake: !!awakeStatus(), linearKey: !!LINEAR_KEY, telegram: telegramStatus(), remote: { wanted: remoteWanted, on: remoteServers.length > 0, url: remoteUrl }, products: productsStatus(), loops: listLoopIds().map(l => loopStatus(l, allTabs)) };
+  return { now: Math.floor(Date.now() / 1000), dispatcher: globalDispatcher(), awake: !!awakeStatus(), linearKey: !!LINEAR_KEY, telegram: telegramStatus(), remote: { wanted: remoteWanted, on: remoteServers.length > 0, url: remoteUrl }, products: productsStatus(), loops: listLoopIds().map(l => loopStatus(l, allTabs, !sel || l === sel)) };
 }
 
 // 제품 계층 메타(products/<id>/product.json) + triage 활동 — 사이드바 product 그룹 헤더가 소비.
@@ -702,7 +720,8 @@ function handler(req, res) {
   if (req.method === 'GET' && u.pathname === '/') { res.writeHead(200, { 'content-type': 'text/html; charset=utf-8' }); res.end(readText(`${ROOT}/dashboard.html`) || '<h1>dashboard.html 없음</h1>'); return; }
   // 벤더링된 정적 에셋(Oat UI 등) — 무빌드. 파일명 화이트리스트로 경로 탈출 차단.
   if (req.method === 'GET' && u.pathname.startsWith('/vendor/')) { const name = u.pathname.slice(8); if (!/^[a-zA-Z0-9._-]+$/.test(name)) { res.writeHead(400); res.end('bad'); return; } const body = readText(`${ROOT}/vendor/${name}`); if (!body) { res.writeHead(404); res.end('not found'); return; } const ct = name.endsWith('.css') ? 'text/css; charset=utf-8' : name.endsWith('.js') ? 'text/javascript; charset=utf-8' : 'application/octet-stream'; res.writeHead(200, { 'content-type': ct, 'cache-control': 'max-age=3600' }); res.end(body); return; }
-  if (req.method === 'GET' && u.pathname === '/api/status') { res.writeHead(200, { 'content-type': 'application/json' }); res.end(JSON.stringify(status())); return; }
+  // loop= 는 "이 루프만 이슈/피드를 실어달라". 안 주면(옛 클라이언트·직접 호출) 전부 실어 준다.
+  if (req.method === 'GET' && u.pathname === '/api/status') { res.writeHead(200, { 'content-type': 'application/json' }); res.end(JSON.stringify(status(u.searchParams.get('loop') || null))); return; }
   if (req.method === 'GET' && u.pathname === '/api/linear/teams') {   // "+ 새 제품" 모달의 팀 선택용 (키 없거나 실패 → 빈 목록 + error 필드로 loud)
     linearGQL(`query{ teams(first:20){ nodes{ id name } } }`)
       .then(t => { res.writeHead(200, { 'content-type': 'application/json' }); res.end(JSON.stringify({ teams: t?.teams?.nodes || [] })); })

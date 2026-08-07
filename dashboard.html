@@ -578,7 +578,23 @@ document.addEventListener('keydown',function(ev){
  if((ev.metaKey||ev.ctrlKey)&&ev.key==='Enter'){var a=document.activeElement;if(a&&a.id==='c_desc'){ev.preventDefault();buildLoop();}else if(a&&a.id==='g_decision'){ev.preventDefault();submitGate();}}
 });
 function renderConnLost(){var el=document.getElementById('connlost');if(failCount<2){el.innerHTML='';return;}var ago=lastOk?' — 마지막 갱신 '+rel(Math.floor(lastOk/1000)):'';el.innerHTML='<span class="cl">⚠️ 서버 연결 끊김'+ago+'</span>';}
-function load(){fetch('/api/status').then(function(r){return r.json();}).then(function(d){failCount=0;lastOk=Date.now();render(d);renderConnLost();}).catch(function(){failCount++;renderConnLost();});}
+/* 폴링은 2초마다지만 응답이 2초 안에 못 오는 링크(폰·셀룰러)에선 요청이 겹쳐 쌓인다.
+   쌓이면 브라우저 동시연결 한도에 걸려 fetch가 줄줄이 타임아웃 → failCount가 올라
+   "서버 연결 끊김"이 뜬다. 실제로 끊긴 게 아니라 우리가 자초한 정체다.
+   그래서 (1) 앞선 요청이 끝나기 전엔 새로 쏘지 않고, (2) 탭이 백그라운드면 아예 쉰다.
+   ?loop= 는 지금 보고 있는 루프만 이슈를 실어달라는 뜻 — 나머지 10개 루프의 이슈는
+   화면에 그려지지도 않으면서 응답의 대부분을 차지하고 있었다. */
+var inflight=false;
+function load(){
+ if(inflight)return;
+ inflight=true;
+ fetch('/api/status?loop='+encodeURIComponent(sel||''))
+  .then(function(r){return r.json();})
+  .then(function(d){failCount=0;lastOk=Date.now();render(d);renderConnLost();})
+  .catch(function(){failCount++;renderConnLost();})
+  .then(function(){inflight=false;});
+}
+function tick(){if(document.hidden)return;load();}
 /* PWA 서비스워커 등록(푸시 수신용) + 알림 클릭 딥링크(?loop=) */
 if('serviceWorker' in navigator)navigator.serviceWorker.register('/sw.js').catch(function(e){console.warn('SW 등록 실패',e);});
 navigator.serviceWorker&&navigator.serviceWorker.addEventListener('message',function(e){if(e.data&&e.data.type==='select-loop'&&e.data.loop)selectLoop(e.data.loop);});
@@ -617,7 +633,9 @@ navigator.serviceWorker&&navigator.serviceWorker.addEventListener('message',func
  addEventListener('touchend',end,{passive:true});
  addEventListener('touchcancel',end,{passive:true});
 })();
-load();setInterval(load,2000);
+load();setInterval(tick,2000);
+/* 백그라운드에 있는 동안은 폴링을 멈췄으니, 돌아온 순간 한 번은 즉시 채워준다. */
+addEventListener('visibilitychange',function(){if(!document.hidden)load();});
 </script>
 <script src="/vendor/oat.min.js" defer></script>
 </body></html>
